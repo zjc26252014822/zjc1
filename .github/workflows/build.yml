@@ -1,0 +1,23 @@
+name: Build Stheno RootHide Patch
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RootHide Theos and SDK
+        run: |
+          git clone --recursive --depth 1 https://github.com/roothide/theos.git /opt/theos
+          git clone --depth 1 https://github.com/theos/sdks.git /tmp/theos-sdks
+          cp -R /tmp/theos-sdks/iPhoneOS16.5.sdk /opt/theos/sdks/
+      - name: Build genuine arm64e RootHide package
+        run: make clean package FINALPACKAGE=1
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SthenoBounds-RootHide
+          path: packages/*.deb
+          if-no-files-found: error
