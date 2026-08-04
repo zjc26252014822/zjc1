@@ -23,7 +23,8 @@ jobs:
           git clone --recursive --depth 1 https://github.com/roothide/theos.git "$RUNNER_TEMP/theos"
           git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
           cp -R "$RUNNER_TEMP/theos-sdks/iPhoneOS16.5.sdk" "$RUNNER_TEMP/theos/sdks/"
-          export THEOS="$RUNNER_TEMP/theos"
+          # Project template defaults to /opt/theos; replace it for this runner.
+          sed -i '' "s|^export THEOS = .*|export THEOS = $RUNNER_TEMP/theos|" Makefile
           make clean package FINALPACKAGE=1
       - name: Commit complete build diagnostic
         if: always()
