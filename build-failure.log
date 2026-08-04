@@ -1,0 +1,324 @@
++ brew update
+[34m==>[0m [1mUpdating Homebrew...[0m
+To restore the stashed changes to /opt/homebrew/Library/Taps/homebrew/homebrew-core, run:
+  cd /opt/homebrew/Library/Taps/homebrew/homebrew-core && git stash pop
+[34m==>[0m [1mDownloading https://ghcr.io/v2/homebrew/core/portable-ruby/blobs/sha256:83a3ff85d83acf0e3dd8105de0fdb01da96b7c0eaf2dfaae2ba6500ec2ae4a64[0m
+#=#=#                                                                          ##O#-#                                                                         ####                                                                       6.4%######################################################################## 100.0%
+[34m==>[0m [1mPouring portable-ruby-4.0.6.arm64_big_sur.bottle.tar.gz[0m
+[34m==>[0m [1mHomebrew's analytics have entirely moved to our InfluxDB instance in the EU.[0m
+We gather less data than before and have destroyed all Google Analytics data:
+  [4mhttps://docs.brew.sh/Analytics[24m[0m
+Please reconsider re-enabling analytics to help our volunteer maintainers with:
+  brew analytics on
+[34m==>[0m [1mHomebrew is run entirely by unpaid volunteers. Please consider donating:[0m
+  [4mhttps://github.com/Homebrew/brew#-donations[24m
+
+Updated 5 taps (hashicorp/tap, azure/bicep, aws/tap, homebrew/core and homebrew/cask).
+[34m==>[0m [1mNew Formulae[0m
+adrs: Architectural Decision Record tool in Rust
+advai-cli: CLI for managing skills and external CLIs
+ai-cli: Generate images, video, audio, and text from the terminal
+apm: Dependency manager for AI agent configuration
+asar: SNES assembler for applying patches to ROM images or building ROMs
+baml: Programming language for agents
+bbrew: TUI for managing Homebrew, Flatpak, and Mac App Store packages
+bismark: Bisulfite read mapper and methylation caller
+bittensor: SDK and command-line tool for the Bittensor network
+bomctl: Format-agnostic SBOM tooling for the stages between SBOM generation and analysis
+bracken: Bayesian estimation of species abundance from Kraken output
+checksec: Security feature auditing for ELF binaries and Linux kernels
+chopper: Filter and trim long-read sequencing data by quality and length
+cve-bin-tool: Scans binaries and SBOMs for known vulnerabilities and prepares reports
+cyclonedx-npm: Creates CycloneDX Software Bill of Materials (SBOM) from npm projects
+deepline: CLI for Deepline data enrichment and durable plays
+diskwatch: Cross-platform disk diagnostics TUI
+dnsglobe: Global DNS propagation checker TUI
+droast: Opinionated Dockerfile linter
+dskditto: Ultra-fast duplicate file finder TUI/GUI
+epics-base: Experimental Physics and Industrial Control System
+esbmc: Efficient SMT-based context-bounded model checker for C, C++, and Python
+esbonio: Language server for working with Sphinx projects
+faker: Python-based fake data generator
+fanficfare: Download fanfiction and original stories as e-books
+fastani: Fast whole-genome similarity (ANI) estimation
+filtlong: Quality filtering of long noisy DNA sequencing reads
+flite: Small fast and portable speech synthesis system
+flyline: Supercharged Bash plugin replacement for readline
+gcx: CLI for managing Grafana Cloud resources
+git-pkgs-brief: Tool that detects and reports a project's toolchain, configuration, and more
+git-pkgs-forge: Go library and CLI for working with git forges
+git-pkgs-proxy: Lightweight caching proxy for package registries
+gita: Manage multiple git repos with sanity
+godns: Dynamic DNS client with multiple providers support
+gof5: F5 BIG-IP VPN client
+goimapnotify: Execute scripts on IMAP mailbox changes using IDLE
+gss-ntlmssp: NTLM authentication plugin for GSSAPI
+hashicorp/tap/tfpolicy
+httpx2: HTTP client library for Python
+humanbound: Adversarial security testing engine, SDK, and CLI for AI agents
+hunk: Review-first terminal diff viewer for agent-authored changesets
+kiesel: JavaScript engine written in Zig
+kotofetch: Small, configurable CLI that displays Japanese quotes in the terminal
+kubectl-klock: Kubectl plugin to render watch output in a more readable fashion
+lazyrsync: Terminal UI for rsync, written in Rust
+lfk: Terminal user interface for navigating and managing Kubernetes clusters
+libjaylink: Provide interoperability with JLINK hardware
+librefang: Self-hostable operating system for autonomous AI agents
+libyojimbo: Secure client/server network protocol library for multiplayer games
+lief-patchelf: Robust, modern reimplementation of patchelf based on the LIEF
+lunarr: Self-hosted media streaming server and Plex alternative for movies and TV
+mcpsnoop: Transparent proxy and TUI for debugging MCP traffic
+mktxp: Prometheus Exporter for Mikrotik RouterOS devices
+modal: Client library and CLI for Modal
+mosdepth: Fast BAM/CRAM depth calculation for WGS, exome, or targeted sequencing
+msdf-atlas-gen: Generator of multi-channel signed distance field atlases from fonts
+msdfgen: Multi-channel signed distance field generator
+nanoq: Minimal but speedy quality control and summaries of nanopore reads
+near: Human-friendly console utility for interacting with NEAR Protocol
+netcode: Secure client/server protocol for multiplayer games built on top of UDP
+nullhub: Management console for the Null ecosystem
+octl: Modern CLI for Outscale
+oh-my-reddit: Beautiful Reddit threads, live in your terminal
+opencrabs: Autonomous, self-improving AI agent in a single Rust binary
+opencv@4: Open source computer vision library
+openlore: Persistent architectural memory and structural cognition for AI coding agents
+ovh-ttyrec: Enhanced (but compatible) version of the classic ttyrec
+perlnavigator: Perl language server
+pixtuoid: Terminal pixel-art office for AI coding agents
+podcast-dl: CLI for downloading and archiving podcasts
+prrte: PMIx Reference RunTime Environment
+qobine-tui: Tui player for Qobuz
+qobine-web: Server and web based player for Qobuz
+rancher-machine: Machine management for a container-centric world
+rapid-mlx: Fast local AI engine for Apple Silicon with an OpenAI-compatible API
+rawtoaces: Utility for converting camera RAW image files to ACES
+reliable: Simple packet acknowledgement system for UDP-based protocols
+rocq-micromega-plugin: Micromega decision procedures plugin for the Rocq prover
+rumbledb: JSONiq and XQuery query engine on Apache Spark
+rust-wasm: Rust standard library and sysroot for WebAssembly targets
+salmon: Transcript-level quantification from RNA-seq reads
+sbom-utility: Tool to validate, analyze, query and edit Software Bills of Materials (SBOMs)
+scrutineer: Security through scrutiny
+sdl3_sound: Abstract soundfile decoder
+seqwish: Alignment to variation graph inducer
+serialize: Single-header bitpacking serializer for C++ aimed at game networking
+smithery-cli: Install and list Model Context Protocol servers from Smithery
+soar: Fast, modern package manager for Static Binaries, Portable Formats and more
+solod: Strict subset of Go with transpiler that translates to regular C
+tmux-fingers: Copy pasting in terminal with vimium/vimperator like hints
+treehouse: Manage worktrees without managing worktrees
+trim-galore: Quality and adapter trimming for FastQ sequencing reads
+tuicr: Code review TUI with vim keybindings
+tytanic: Test runner for Typst projects
+utiluti: macOS command-line tool to work with default apps
+virtiofsd: Vhost-user virtio-fs device backend written in Rust
+vsview: Next-generation VapourSynth previewer
+webfont: Generator of fonts from SVG icons, with TTF encoding and WOFF/WOFF2 decoding
+wgsl-analyzer: Language server implementation for WGSL and WESL
+wild: Very fast linker for Linux
+worm-scraper: Scrape Worm, Ward, and Glow-worm web serials into EPUB ebooks
+woxi: Interpreter for a subset of the Wolfram Language
+zero: Terminal coding agent you own
+zsh-patina: Blazingly fast Zsh syntax highlighter
+[34m==>[0m [1mNew Casks[0m
+adrafinil: Keep your computer awake while AI coding agents are working
+airsync: Continuity tools for use with Android devices
+android-cli: Command-line interface for Android app development with AI agents
+aphera: Raw photo editing software
+arcbox: Runtime for containers, Linux virtual machines, and AI agent sandboxes
+aside: Web browser with built-in AI assistant
+bettercmdtab@beta: Replacement for the built-in Cmd+Tab app switcher
+billy: Invoice manager
+block-buzz: Workspace for humans and AI agents
+caldigit-usb-hub-support-driver: Apple SuperDrive, Apple Keyboard, and Improved iPhone/iPad Charging
+cate: Infinite zoomable canvas with editor, terminal, and browser panels
+changes: Git GUI
+chatgpt-classic: OpenAI's previous ChatGPT desktop app
+clarc: Desktop client for Claude Code
+claude-status-bar: Menu bar status indicator for Claude Code
+cleanmymac-cli: Command-line interface for CleanMyMac
+cmtrace-open: Log viewer for ConfigMgr, Intune, and Windows diagnostic logs
+codexia: GUI and toolkit for Codex CLI and Claude Code
+degr: Temperature and clock screensaver
+diversion: Cloud-native version control CLI and agent
+dnclient-server: Peer-to-peer VPN client daemon for managed nebula networks
+font-annotationmono-nerd-font
+font-caacupe-one
+font-googlesanscode-nerd-font
+font-luciole
+font-scoutie-sans
+gamehub: Compatibility layer for running Windows and Steam games
+gitcomet: Git GUI
+gnome: Menu bar GIF search and creation tool
+harper-desktop: Grammar checker for developers
+hermes-desktop: Open-source desktop AI agent
+itermcompanion: Pairs iTerm2 with the iTerm2 Companion iPhone app
+itsypad: Tiny, fast scratchpad and clipboard manager
+juicy: Menu bar battery monitor with custom charge alerts and health tracking
+keeperdb: Database management tool for Postgres, MySQL, SQLite, MSSQL, Oracle, Redshift
+koe: Zero-GUI voice input tool
+koreader: Document viewer for e-ink devices
+lemonade-server: Local LLM server with GPU and NPU acceleration
+libation: Audible audiobook manager and liberator
+linguax: Menu-bar utility for third-party mice with smooth scrolling and mapping
+lm-studio-bionic: AI agent for working with open models
+logseq-og: Privacy-first, open-source platform for knowledge sharing and management
+lumide: Agent-native code editor
+luna-display: Use your iPad as a wireless second display
+luna-secondary: Turn a computer or tablet into a second display
+mac-sai: System cleaner, optimiser, and malware scanner
+markdown-preview: Markdown previewer with bundled Quick Look extension
+mend: Application security scanning CLI
+moonfin: Media streaming client for Jellyfin and Emby
+muesli: Local-first dictation and meeting transcription
+neodisk: Read-only disk space visualiser
+neon-vision-editor: Native code and text editor
+onexrayse: Cross-platform Xray-core client
+onit-sidekick: AI chat panel
+opendisplay: Second-display utility for iPhone and iPad over USB and Wi-Fi
+openwhispr: Privacy-first voice-to-text dictation with AI agents
+orbit: Multiple Google accounts in isolated sessions in one window
+otty: Terminal emulator built for code agents
+pastebot@2: Workflow application to improve productivity
+perplexity: AI-powered answer engine with Personal Computer agent
+phosphene: Custom video wallpapers for the desktop and lock screen
+pique: Quick Look extension for syntax-highlighted file previews
+pocket-bard: TTRPG ambient audio and sound effects
+prisma-access-browser: Secure enterprise browser with built-in threat and data protection
+proxybridge: Proxy client with per-application traffic routing rules
+raycast-glaze: Create desktop apps by chatting with AI
+redot: Multi-platform 2D and 3D game engine
+roslynpad: C# editor and runner based on Roslyn
+sessionwatcher: Menu bar monitor for AI coding assistant usage and limits
+siliconscope: System monitor for Apple Silicon with ANE, Media Engine and bandwidth tracking
+slashy: Email client for Gmail
+smallstepagent: Device identity and certificate management daemon
+snapzy: Native screenshots, recording, annotation, and editing from the menu bar
+sogouinput: Input method supporting full and double spelling
+sonarqube-cli: Code quality and security for terminal workflows, scripts, and AI agents
+spacejump: Menu bar utility to name and switch desktop Spaces
+subtitle-studio: Offline AI subtitle generator
+switchy: Switch Magic Keyboard, Trackpad and Mouse between Macs
+tickernotch: Tickers, news, weather and social counters beside the notch or in the menu bar
+tight-studio: Screen recorder and video editor
+toolhive-studio: Desktop application to install, manage, and run MCP servers
+uniclipboard: Cross-device clipboard syncing tool
+unity-cli: Command-line interface for Unity
+unity-hub@beta: Management tool for Unity
+valkey-admin: Administration tool for Valkey clusters and standalone instances
+vicinae: Application launcher and command palette
+vorssaint: Menu bar toolkit with keep-awake, system monitor and volume mixer
+willow-voice: AI-powered voice dictation and writing assistant
+work-louder-input: Keyboard configurator for Work Louder devices
+zcode: AI-assisted development environment
+zush: AI-powered file renamer and organiser
+[34m==>[0m [1mOutdated Formulae[0m
+aws-sam-cli
+azure-cli
+bicep
+c-ares
+ca-certificates
+certifi
+cffi
+cmake
+cryptography
+fontconfig
+geckodriver
+gh
+git
+glib
+gnupg
+gradle-completion
+harfbuzz
+isl
+jpeg-turbo
+kotlin
+libnghttp2
+libnghttp3
+libngtcp2
+libpsl
+libssh2
+libtiff
+node@22
+openjdk
+openssl@3
+p11-kit
+pinentry
+pipx
+pkgconf
+python@3.13
+rpds-py
+ruby@3.3
+rustup
+selenium-server
+simdjson
+sqlite
+swiftformat
+xcodes
+[34m==>[0m [1mOutdated Casks[0m
+firefox
+google-chrome
+microsoft-edge
+
+You have [1m42[0m outdated formulae and [1m3[0m outdated casks installed.
+You can upgrade them with [1mbrew upgrade[0m
+or list them with [1mbrew outdated[0m.
++ brew install ldid dpkg
+::warning::The following taps are not trusted:%0A  aws/tap%0A%0AHomebrew is currently ignoring formulae, casks and commands from these taps because tap trust is required.%0A%0AUntap them with:%0A  brew untap aws/tap%0ATrust specific formulae, casks and commands with:%0A  brew trust --formula <user>/<tap>/<formula>%0A  brew trust --cask <user>/<tap>/<cask>%0A  brew trust --command <user>/<tap>/<command>%0AWhole-tap trust is broader and includes all current and future formulae,%0Acasks and commands from the listed taps. Trust whole taps with:%0A  brew trust aws/tap%0ATo disable trust checks:%0A  export HOMEBREW_NO_REQUIRE_TAP_TRUST=1%0AThis is not recommended and will be removed in a later release.%0AFor more information, see:%0A  https://docs.brew.sh/Tap-Trust
+[34m==>[0m [1mWould install 2 formulae:[0m
+ldid dpkg
+[34m==>[0m [1mDownloading https://ghcr.io/v2/homebrew/core/ldid/manifests/2.1.5_1-1[0m
+[34m==>[0m [1mWould install 1 dependency for ldid:[0m
+libplist
+[34m==>[0m [1mWould upgrade 2 dependencies for ldid:[0m
+ca-certificates
+openssl@3
+[34m==>[0m [1mDownloading https://ghcr.io/v2/homebrew/core/dpkg/manifests/1.23.7[0m
+[34m==>[0m [1mWould install 3 dependencies for dpkg:[0m
+json-c
+gpatch
+libmd
+[32m==>[0m [1mFetching downloads for: [32mldid[39m and [32mdpkg[39m[0m
+✔︎ Bottle Manifest libplist (2.7.0)
+✔︎ Bottle Manifest ca-certificates (2026-07-16)
+✔︎ Bottle Manifest openssl@3 (3.6.3)
+✔︎ Bottle ca-certificates (2026-07-16)
+✔︎ Bottle libplist (2.7.0)
+✔︎ Bottle ldid (2.1.5_1)
+✔︎ Bottle Manifest json-c (0.19)
+✔︎ Bottle Manifest gpatch (2.8)
+✔︎ Bottle json-c (0.19)
+✔︎ Bottle gpatch (2.8)
+✔︎ Bottle dpkg (1.23.7)
+✔︎ Bottle Manifest libmd (1.2.0)
+✔︎ Bottle libmd (1.2.0)
+✔︎ Bottle openssl@3 (3.6.3)
+[32m==>[0m [1mInstalling ldid dependency: [32mlibplist[39m[0m
+[34m==>[0m [1mPouring libplist--2.7.0.arm64_sonoma.bottle.tar.gz[0m
+🍺  /opt/homebrew/Cellar/libplist/2.7.0: 32 files, 606.6KB
+[32m==>[0m [1mInstalling [32mldid[39m[0m
+[34m==>[0m [1mPouring ldid--2.1.5_1.arm64_sonoma.bottle.1.tar.gz[0m
+🍺  /opt/homebrew/Cellar/ldid/2.1.5_1: 6 files, 270.1KB
+[32m==>[0m [1mInstalling dependencies for dpkg:[0m [32mjson-c[39m, [32mgpatch[39m and [32mlibmd[39m[0m
+[32m==>[0m [1mInstalling dpkg dependency: [32mjson-c[39m[0m
+[34m==>[0m [1mPouring json-c--0.19.arm64_sonoma.bottle.tar.gz[0m
+🍺  /opt/homebrew/Cellar/json-c/0.19: 34 files, 361.4KB
+[32m==>[0m [1mInstalling dpkg dependency: [32mgpatch[39m[0m
+[34m==>[0m [1mPouring gpatch--2.8.arm64_sonoma.bottle.tar.gz[0m
+🍺  /opt/homebrew/Cellar/gpatch/2.8: 12 files, 412.4KB
+[32m==>[0m [1mInstalling dpkg dependency: [32mlibmd[39m[0m
+[34m==>[0m [1mPouring libmd--1.2.0.arm64_sonoma.bottle.tar.gz[0m
+🍺  /opt/homebrew/Cellar/libmd/1.2.0: 138 files, 1MB
+[32m==>[0m [1mInstalling [32mdpkg[39m[0m
+[34m==>[0m [1mPouring dpkg--1.23.7.arm64_sonoma.bottle.tar.gz[0m
+[34m==>[0m [1mCaveats[0m
+This installation of dpkg is not configured to install software, so
+commands such as `dpkg -i`, `dpkg --configure` will fail.
+[34m==>[0m [1mSummary[0m
+🍺  /opt/homebrew/Cellar/dpkg/1.23.7: 740 files, 18.3MB
+[32m==>[0m [1mCaveats[0m
+[34m==>[0m [1mdpkg[0m
+This installation of dpkg is not configured to install software, so
+commands such as `dpkg -i`, `dpkg --configure` will fail.
++ git clone --recursive --depth 1 https://github.com/roothide/theos.git /opt/theos
+fatal: could not create work tree dir '/opt/theos': Permission denied
