@@ -6,8 +6,9 @@
 static IMP origSetFrame = NULL;
 static __thread BOOL adjusting = NO;
 static const CGFloat kEdgeMargin = 12.0;
+static Class SthenoWindowClass = Nil;
 
-static CGRect boundedFrame(UIWindow *window, CGRect frame) {
+static CGRect ClampFrame(UIWindow *window, CGRect frame) {
     UIScreen *screen = window.screen ?: UIScreen.mainScreen;
     CGRect bounds = screen.bounds;
     UIEdgeInsets safe = window.safeAreaInsets;
@@ -15,35 +16,54 @@ static CGRect boundedFrame(UIWindow *window, CGRect frame) {
     CGFloat minY = CGRectGetMinY(bounds) + safe.top + kEdgeMargin;
     CGFloat maxX = CGRectGetMaxX(bounds) - safe.right - kEdgeMargin - CGRectGetWidth(frame);
     CGFloat maxY = CGRectGetMaxY(bounds) - safe.bottom - kEdgeMargin - CGRectGetHeight(frame);
-    frame.origin.x = maxX < minX ? (minX + maxX) / 2.0 : MIN(MAX(frame.origin.x, minX), maxX);
-    frame.origin.y = maxY < minY ? (minY + maxY) / 2.0 : MIN(MAX(frame.origin.y, minY), maxY);
+    frame.origin.x = (maxX < minX) ? (minX + maxX) * .5 : MIN(MAX(frame.origin.x, minX), maxX);
+    frame.origin.y = (maxY < minY) ? (minY + maxY) * .5 : MIN(MAX(frame.origin.y, minY), maxY);
     return frame;
 }
 
-static void hookedSetFrame(UIWindow *self, SEL _cmd, CGRect frame) {
-    if (adjusting) { ((void(*)(id,SEL,CGRect))origSetFrame)(self, _cmd, frame); return; }
-    CGRect limited = boundedFrame(self, frame);
-    BOOL exceeded = !CGRectEqualToRect(frame, limited);
-    adjusting = YES;
-    ((void(*)(id,SEL,CGRect))origSetFrame)(self, _cmd, limited);
-    adjusting = NO;
-    if (exceeded) NSLog(@"[SthenoBounds] clamped Stheno floating window");
+static void ApplyBoundary(UIWindow *window) {
+    if (!window || adjusting || window.hidden) return;
+    CGRect old = window.frame, limited = ClampFrame(window, old);
+    if (!CGRectEqualToRect(old, limited)) {
+        adjusting = YES;
+        window.frame = limited;
+        adjusting = NO;
+        NSLog(@"[SthenoBounds] corrected %@", window);
+    }
 }
 
-static void installHook(void) {
-    Class cls = objc_getClass("Stheno.SthenoWindow");
-    if (!cls) { NSLog(@"[SthenoBounds] SthenoWindow unavailable; retrying"); return; }
-    SEL selector = @selector(setFrame:);
-    MSHookMessageEx(cls, selector, (IMP)hookedSetFrame, &origSetFrame);
-    NSLog(@"[SthenoBounds] hook installed on %@", NSStringFromClass(cls));
+static void HookedSetFrame(UIWindow *self, SEL cmd, CGRect frame) {
+    if (adjusting || !origSetFrame) { ((void(*)(id,SEL,CGRect))origSetFrame)(self,cmd,frame); return; }
+    ((void(*)(id,SEL,CGRect))origSetFrame)(self,cmd,ClampFrame(self, frame));
+}
+
+@interface SthenoBoundaryGuard : NSObject @end
+@implementation SthenoBoundaryGuard
+- (void)tick:(CADisplayLink *)link {
+    if (!SthenoWindowClass) SthenoWindowClass = NSClassFromString(@"Stheno.SthenoWindow");
+    if (!SthenoWindowClass) return;
+    // This independent display-link guard catches frame updates that bypass setFrame:.
+    for (UIWindow *window in UIApplication.sharedApplication.windows)
+        if ([window isKindOfClass:SthenoWindowClass]) ApplyBoundary(window);
+}
+@end
+
+static void Install(void) {
+    SthenoWindowClass = NSClassFromString(@"Stheno.SthenoWindow");
+    if (!SthenoWindowClass) return;
+    if (!origSetFrame) MSHookMessageEx(SthenoWindowClass, @selector(setFrame:), (IMP)HookedSetFrame, &origSetFrame);
+    static SthenoBoundaryGuard *guard;
+    static CADisplayLink *displayLink;
+    if (!guard) {
+        guard = [SthenoBoundaryGuard new];
+        displayLink = [CADisplayLink displayLinkWithTarget:guard selector:@selector(tick:)];
+        [displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    }
+    NSLog(@"[SthenoBounds] frame hook and display guard active");
 }
 
 %ctor {
-    NSLog(@"[SthenoBounds] injected into SpringBoard");
-    // Stheno's Swift class is registered after dylib load; retry during launch.
-    for (NSUInteger n = 1; n <= 20; n++) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(n * 0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if (!origSetFrame) installHook();
-        });
-    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (NSUInteger n=1; n<=40; n++) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(n*.25*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ Install(); });
+    });
 }
