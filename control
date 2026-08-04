@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Bounds Guard
-Version: 0.2.0
+Version: 0.2.1
 Architecture: iphoneos-arm64e
-Description: RootHide boundary guard for Stheno floating window.
+Description: RootHide boundary guard for Stheno floating window, with load diagnostics.
 Maintainer: Local
 Author: Local
 Section: Tweaks
