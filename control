@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Bounds Load Test
-Version: 0.3.1
+Name: Stheno Bounds Runtime Inspector
+Version: 0.3.2
 Architecture: iphoneos-arm64e
-Description: Visual SpringBoard injection verification for Stheno Bounds.
+Description: Runtime class and window inspector for Stheno boundary patch.
 Maintainer: Local
 Author: Local
 Section: Tweaks
