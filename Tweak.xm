@@ -43,8 +43,12 @@ static void HookedSetFrame(UIWindow *self, SEL cmd, CGRect frame) {
     if (!SthenoWindowClass) SthenoWindowClass = NSClassFromString(@"Stheno.SthenoWindow");
     if (!SthenoWindowClass) return;
     // This independent display-link guard catches frame updates that bypass setFrame:.
-    for (UIWindow *window in UIApplication.sharedApplication.windows)
-        if ([window isKindOfClass:SthenoWindowClass]) ApplyBoundary(window);
+    // Enumerate scenes to avoid UIApplication.windows (deprecated on iOS 15+).
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows)
+            if ([window isKindOfClass:SthenoWindowClass]) ApplyBoundary(window);
+    }
 }
 @end
 
