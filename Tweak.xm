@@ -2,6 +2,21 @@
 #import <Foundation/Foundation.h>
 #import <substrate.h>
 #import <objc/runtime.h>
+#import <roothide.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+static void DebugLog(NSString *message) {
+    NSLog(@"%@", message);
+    const char *path = jbroot("/var/SthenoBounds.log");
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd >= 0) {
+        const char *text = message.UTF8String;
+        write(fd, text, strlen(text));
+        write(fd, "\n", 1);
+        close(fd);
+    }
+}
 
 static IMP origSetFrame = NULL;
 static __thread BOOL adjusting = NO;
@@ -28,7 +43,7 @@ static void ApplyBoundary(UIWindow *window) {
         adjusting = YES;
         window.frame = limited;
         adjusting = NO;
-        NSLog(@"[SthenoBounds] corrected %@", window);
+        DebugLog(@"[SthenoBounds] corrected a floating window");
     }
 }
 
@@ -54,7 +69,7 @@ static void HookedSetFrame(UIWindow *self, SEL cmd, CGRect frame) {
 
 static void Install(void) {
     SthenoWindowClass = NSClassFromString(@"Stheno.SthenoWindow");
-    if (!SthenoWindowClass) return;
+    if (!SthenoWindowClass) { DebugLog(@"[SthenoBounds] SthenoWindow class not found yet"); return; }
     if (!origSetFrame) MSHookMessageEx(SthenoWindowClass, @selector(setFrame:), (IMP)HookedSetFrame, &origSetFrame);
     static SthenoBoundaryGuard *guard;
     static CADisplayLink *displayLink;
@@ -63,10 +78,11 @@ static void Install(void) {
         displayLink = [CADisplayLink displayLinkWithTarget:guard selector:@selector(tick:)];
         [displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     }
-    NSLog(@"[SthenoBounds] frame hook and display guard active");
+    DebugLog(@"[SthenoBounds] frame hook and display guard active");
 }
 
 %ctor {
+    DebugLog(@"[SthenoBounds] injected into SpringBoard");
     dispatch_async(dispatch_get_main_queue(), ^{
         for (NSUInteger n=1; n<=40; n++) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(n*.25*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ Install(); });
     });
