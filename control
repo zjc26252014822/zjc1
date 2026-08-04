@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Bounds Runtime Inspector
-Version: 0.3.2
+Name: Stheno Bounds Geometry Inspector
+Version: 0.3.3
 Architecture: iphoneos-arm64e
-Description: Runtime class and window inspector for Stheno boundary patch.
+Description: Delayed floating-window geometry inspector for Stheno.
 Maintainer: Local
 Author: Local
 Section: Tweaks
