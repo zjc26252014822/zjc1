@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Bounds Guard
-Version: 0.3.0
+Name: Stheno Bounds Load Test
+Version: 0.3.1
 Architecture: iphoneos-arm64e
-Description: RootHide boundary guard for Stheno floating window.
+Description: Visual SpringBoard injection verification for Stheno Bounds.
 Maintainer: Local
 Author: Local
 Section: Tweaks
