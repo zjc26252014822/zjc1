@@ -5,6 +5,7 @@
 #import <roothide.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 static void DebugLog(NSString *message) {
     NSLog(@"%@", message);
