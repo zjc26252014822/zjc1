@@ -11,33 +11,39 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Install RootHide Theos and SDK
+      - name: Build and capture every diagnostic
+        id: compile
+        continue-on-error: true
+        shell: bash
         run: |
-          set -euxo pipefail
+          set -o pipefail
+          exec > >(tee build-failure.log) 2>&1
+          set -x
+          brew update
           brew install ldid dpkg
           git clone --recursive --depth 1 https://github.com/roothide/theos.git /opt/theos
           git clone --depth 1 https://github.com/theos/sdks.git /tmp/theos-sdks
           cp -R /tmp/theos-sdks/iPhoneOS16.5.sdk /opt/theos/sdks/
-      - name: Build genuine arm64e RootHide package
+          make clean package FINALPACKAGE=1
+      - name: Commit complete build diagnostic
+        if: always()
+        shell: bash
         run: |
-          set -o pipefail
-          make clean package FINALPACKAGE=1 2>&1 | tee build.log
-          exit ${PIPESTATUS[0]}
-      - name: Commit build log on failure
-        if: failure()
-        run: |
-          cp build.log build-failure.log || true
           git config user.name 'Stheno build bot'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add build-failure.log
-          git diff --cached --quiet || git commit -m 'Record failed build log'
-          git push
-      - name: Upload logs and deb
+          test -f build-failure.log || echo 'Workflow stopped before command logging started.' > build-failure.log
+          git add -f build-failure.log
+          git diff --cached --quiet || git commit -m 'Record Actions build diagnostic'
+          git push origin HEAD:main
+      - name: Upload package and diagnostic
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: SthenoBounds-build-output
           path: |
             packages/*.deb
-            build.log
+            build-failure.log
           if-no-files-found: warn
+      - name: Fail job after recording diagnostics
+        if: steps.compile.outcome == 'failure'
+        run: exit 1
