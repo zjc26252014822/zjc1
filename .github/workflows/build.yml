@@ -19,11 +19,11 @@ jobs:
           set -o pipefail
           exec > >(tee build-failure.log) 2>&1
           set -x
-          brew update
           brew install ldid dpkg
-          git clone --recursive --depth 1 https://github.com/roothide/theos.git /opt/theos
-          git clone --depth 1 https://github.com/theos/sdks.git /tmp/theos-sdks
-          cp -R /tmp/theos-sdks/iPhoneOS16.5.sdk /opt/theos/sdks/
+          git clone --recursive --depth 1 https://github.com/roothide/theos.git "$RUNNER_TEMP/theos"
+          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
+          cp -R "$RUNNER_TEMP/theos-sdks/iPhoneOS16.5.sdk" "$RUNNER_TEMP/theos/sdks/"
+          export THEOS="$RUNNER_TEMP/theos"
           make clean package FINALPACKAGE=1
       - name: Commit complete build diagnostic
         if: always()
