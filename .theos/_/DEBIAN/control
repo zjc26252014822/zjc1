@@ -1,0 +1,10 @@
+Package: com.nx.stheno.bounds
+Name: Stheno Bounds Debug
+Description: RootHide-native diagnostic injection for Stheno.
+Maintainer: Local
+Author: Local
+Section: Tweaks
+Depends: firmware (>= 16.1), ellekit, ldid
+Architecture: iphoneos-arm64e
+Version: 0.1.0-1+debug
+Installed-Size: 
