@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.5
+Version: 3.4.6
 Architecture: iphoneos-arm64e
-Description: Stheno 观测版 v3.4.5：hook ReflectManager -offsetFilter（唯一 ObjC 方法，SwiftUI OffsetEffect 用它定位小窗），打印返回类型与值。
+Description: Stheno 观测版 v3.4.6：修复 v3.4.5 hook 未装上（constructor 时类未注册）——延迟 3s + 1.5s 间隔重试 hook ReflectManager -offsetFilter。
 Maintainer: Local
 Author: Local
 Section: Tweaks

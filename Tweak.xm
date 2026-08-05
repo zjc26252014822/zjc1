@@ -9,9 +9,9 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno 观测版 v3.4.5 - hook ReflectManager -offsetFilter
-// 发现: ReflectManager 唯一 ObjC 方法 = offsetFilter, SwiftUI OffsetEffect 用它定位小窗
-// 安全返回约定: 16字节 struct (CGPoint/CGSize 均为16字节寄存器返回; 标量也兼容低8字节)
+// Stheno 观测版 v3.4.6 - hook ReflectManager -offsetFilter (延迟+重试)
+// 修复 v3.4.5: constructor 立即执行时 Stheno 类未注册, NSClassFromString 返回 nil 被静默跳过
+// 方案: 延迟 3s 开始尝试, 每 1.5s 重试直到成功或 12 次
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -49,22 +49,37 @@ static Ret16 HookOffsetFilter(id self, SEL _cmd) {
     return r;
 }
 
-__attribute__((constructor)) static void Start(void) {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        const char *names[] = {"_TtC6Stheno14ReflectManager", "Stheno.ReflectManager", NULL};
-        for (int i = 0; names[i]; i++) {
-            Class cls = NSClassFromString([NSString stringWithUTF8String:names[i]]);
-            if (!cls) continue;
-            SEL sel = NSSelectorFromString(@"offsetFilter");
-            if (sel && [cls instancesRespondToSelector:sel]) {
-                MSHookMessageEx(cls, sel, (IMP)HookOffsetFilter, (IMP *)&OrigOffsetFilter);
-                Log("hooked %s -offsetFilter\n", names[i]);
-                break;
-            } else {
-                Log("class %s found but no -offsetFilter\n", names[i]);
-            }
+static void TryHook(void) {
+    static int attempt = 0;
+    const char *names[] = {"_TtC6Stheno14ReflectManager", "Stheno.ReflectManager", NULL};
+    for (int i = 0; names[i]; i++) {
+        Class cls = NSClassFromString([NSString stringWithUTF8String:names[i]]);
+        if (!cls) {
+            Log("try[%d]: %s not found yet\n", attempt, names[i]);
+            continue;
         }
-    });
-    Log("SthenoBounds v3.4.5 loaded (offsetFilter observe)\n");
+        SEL sel = NSSelectorFromString(@"offsetFilter");
+        if (sel && [cls instancesRespondToSelector:sel]) {
+            if (OrigOffsetFilter == NULL) {
+                MSHookMessageEx(cls, sel, (IMP)HookOffsetFilter, (IMP *)&OrigOffsetFilter);
+                Log("HOOKED %s -offsetFilter (attempt %d)\n", names[i], attempt);
+            }
+            return;
+        } else {
+            Log("try[%d]: %s found, no -offsetFilter\n", attempt, names[i]);
+        }
+    }
+    attempt++;
+    if (attempt < 12) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ TryHook(); });
+    } else {
+        Log("give up after %d attempts\n", attempt);
+    }
+}
+
+__attribute__((constructor)) static void Start(void) {
+    Log("SthenoBounds v3.4.6 loaded (offsetFilter observe, delayed retry)\n");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ TryHook(); });
 }
