@@ -10,10 +10,11 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno 观测版 v3.4.8 - hook CALayer setPosition 记录所有移动明显的 layer
-// 发现: SwiftUI 内部渲染 layer 无 delegate, 之前的过滤漏掉了真正移动的层
-//       (no-delegate layer pos 到了 645,1398 屏幕外!)
-// 新策略: 记录所有 position 变化 > 1pt 的 layer, 向上追溯 superlayer 链找 Stheno 祖先
+// Stheno 边界修复 v3.4.9 - clamp 小窗 layer position
+// 定位成功: 小窗 = 303x303 纯 CALayer, 挂在 _UIHostingView...Stheno9Container (全屏0,0) 下,
+//           通过 setPosition: 移动 (v3.4.8 日志实证)
+// 修复: hook CALayer setPosition:, 识别小窗层 (Stheno 祖先 + 尺寸150-400),
+//       把 position clamp 到屏幕内 (Container 全屏在 0,0, frame 即屏幕坐标)
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -26,56 +27,56 @@ static void Log(const char *fmt, ...) {
 }
 
 static IMP OrigSetPosition;
-static NSUInteger movedCount, sthenoAncestorCount;
-static NSMutableDictionary *lastPosByKey;   // key: 类名 -> last pos
+static NSUInteger clampCount;
+static const CGFloat TopInset = 47.0;    // 状态栏
+static const CGFloat BottomInset = 34.0; // home indicator
+static const CGFloat SideInset = 0.0;    // 贴边
 
-// 向上追溯 superlayer 链, 找最近的 Stheno 相关祖先 (delegate 或类名)
-static const char *FindSthenoAncestor(CALayer *layer, int depth) {
-    if (!layer || depth > 8) return NULL;
+// 向上追溯 superlayer 链找 Stheno 祖先
+static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
+    if (!layer || depth > 10) return NO;
     id d = layer.delegate;
     if (d) {
         const char *n = class_getName(object_getClass(d));
-        if (n && (strstr(n, "Stheno") || strstr(n, "Reflect"))) return n;
+        if (n && (strstr(n, "Stheno") || strstr(n, "Reflect"))) return YES;
     }
     const char *ln = class_getName(object_getClass(layer));
     if (ln && (strstr(ln, "PlatformViewHost") || strstr(ln, "UIHostingView") ||
                strstr(ln, "Stheno") || strstr(ln, "Reflect")))
-        return ln;
-    return FindSthenoAncestor(layer.superlayer, depth + 1);
+        return YES;
+    return HasSthenoAncestor(layer.superlayer, depth + 1);
 }
 
 static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
-    // 记录移动明显的 layer (与上次 position 比较)
-    static NSMutableDictionary *lastMap;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ lastMap = [NSMutableDictionary dictionary]; });
-    const char *cls = class_getName(object_getClass(self));
-    const char *ancestor = FindSthenoAncestor(self, 0);
-    NSString *key = [NSString stringWithFormat:@"%s|%s", cls, ancestor ? ancestor : "-"];
-    NSValue *lastVal = lastMap[key];
-    BOOL moved = NO;
-    if (lastVal) {
-        CGPoint last = lastVal.CGPointValue;
-        moved = (fabs(pos.x - last.x) > 1.0 || fabs(pos.y - last.y) > 1.0);
-    }
-    lastMap[key] = [NSValue valueWithCGPoint:pos];
-    if (moved) {
-        movedCount++;
-        BOOL stheno = (ancestor != NULL);
-        if (stheno) sthenoAncestorCount++;
-        // 节流: Stheno 相关的全记, 其他的只记前 30 个
-        if (stheno || movedCount <= 30) {
-            id d = self.delegate;
-            Log("moved[%lu]: %s pos=(%.0f,%.0f) frame=(%.0f,%.0f %.0fx%.0f) ancestor=%s delegate=%s\n",
-                (unsigned long)movedCount, cls,
-                pos.x, pos.y,
-                self.frame.origin.x, self.frame.origin.y,
-                self.frame.size.width, self.frame.size.height,
-                ancestor ? ancestor : "-",
-                d ? class_getName(object_getClass(d)) : "none");
+    CGPoint newPos = pos;
+    @try {
+        // 只看 150-400 尺寸的层 (小窗本体, 过滤小图标)
+        CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
+        if (w >= 150 && w <= 420 && h >= 150 && h <= 420 && HasSthenoAncestor(self, 0)) {
+            CGRect screen = UIScreen.mainScreen.bounds;
+            // position 是 layer 中心点 (相对父 layer); Container 全屏在 0,0 -> frame 即屏幕坐标
+            CGFloat halfW = w / 2.0, halfH = h / 2.0;
+            CGFloat minX = SideInset + halfW;
+            CGFloat maxX = screen.size.width - SideInset - halfW;
+            CGFloat minY = TopInset + halfH;
+            CGFloat maxY = screen.size.height - BottomInset - halfH;
+            CGFloat nx = MIN(MAX(pos.x, minX), maxX);
+            CGFloat ny = MIN(MAX(pos.y, minY), maxY);
+            if (nx != pos.x || ny != pos.y) {
+                clampCount++;
+                if (clampCount <= 30 || clampCount % 10 == 0) {
+                    Log("CLAMP[%lu]: %.0fx%.0f pos=(%.0f,%.0f) -> (%.0f,%.0f) [screen %.0fx%.0f]\n",
+                        (unsigned long)clampCount, w, h,
+                        pos.x, pos.y, nx, ny,
+                        screen.size.width, screen.size.height);
+                }
+                newPos = CGPointMake(nx, ny);
+            }
         }
+    } @catch (NSException *e) {
+        Log("clamp exception: %@\n", e.name);
     }
-    ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
+    ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, newPos);
 }
 
 __attribute__((constructor)) static void Start(void) {
@@ -84,5 +85,5 @@ __attribute__((constructor)) static void Start(void) {
         Class layerCls = CALayer.class;
         MSHookMessageEx(layerCls, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
     });
-    Log("SthenoBounds v3.4.8 loaded (track moved layers, find Stheno ancestor)\n");
+    Log("SthenoBounds v3.4.9 loaded (CLAMP small-window layer position)\n");
 }

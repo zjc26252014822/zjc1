@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.8
+Version: 3.4.9
 Architecture: iphoneos-arm64e
-Description: Stheno 观测版 v3.4.8：记录所有移动明显的 CALayer（含无delegate的SwiftUI内部层），追溯superlayer链找Stheno祖先，定位小窗真实渲染层。
+Description: Stheno 边界修复 v3.4.9：定位成功（小窗=303x303 CALayer 经 setPosition 移动），clamp 其 position 到屏幕内贴边。
 Maintainer: Local
 Author: Local
 Section: Tweaks
