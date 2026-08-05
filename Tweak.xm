@@ -10,11 +10,11 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno 边界修复 v3.4.9 - clamp 小窗 layer position
-// 定位成功: 小窗 = 303x303 纯 CALayer, 挂在 _UIHostingView...Stheno9Container (全屏0,0) 下,
-//           通过 setPosition: 移动 (v3.4.8 日志实证)
-// 修复: hook CALayer setPosition:, 识别小窗层 (Stheno 祖先 + 尺寸150-400),
-//       把 position clamp 到屏幕内 (Container 全屏在 0,0, frame 即屏幕坐标)
+// Stheno 边界修复 v3.4.11 - 屏幕坐标 clamp
+// v3.4.10 失败: 只夹到 303x303 装饰层; 用户拖的 344x746 内容层没被夹
+// 关键修正: 1) position 转屏幕坐标再 clamp (父层可能有偏移/transform, 直接夹 pos 基准错)
+//           2) 任何尺寸的 Stheno 层都处理 (> 30pt, 过滤小图标), 不卡 150-420
+//           3) 顺带观测: 记录所有 Stheno 层 setPosition (前60条), 确认到底谁在动
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -27,12 +27,9 @@ static void Log(const char *fmt, ...) {
 }
 
 static IMP OrigSetPosition;
-static NSUInteger clampCount;
-static const CGFloat TopInset = 47.0;    // 状态栏
-static const CGFloat BottomInset = 34.0; // home indicator
-static const CGFloat SideInset = 0.0;    // 贴边
+static NSUInteger clampCount, observeCount;
+static const CGFloat TopInset = 47.0, BottomInset = 34.0, SideInset = 0.0;
 
-// 向上追溯 superlayer 链找 Stheno 祖先
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     if (!layer || depth > 10) return NO;
     id d = layer.delegate;
@@ -50,30 +47,47 @@ static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
 static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
     CGPoint newPos = pos;
     @try {
-        // 只看非全屏的大层 (小窗内容层, 如 344x746 / 303x303; 过滤小图标)
-        // v3.4.9 只夹 150-420 漏掉了 344x746 真正被拖的层, 改为屏幕尺寸 85% 以内都夹
         CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-        CGRect screen = UIScreen.mainScreen.bounds;
-        BOOL bigEnough = w >= 100 && h >= 100;
-        BOOL notFullscreen = w < screen.size.width * 0.85 && h < screen.size.height * 0.85;
-        if (bigEnough && notFullscreen && HasSthenoAncestor(self, 0)) {
-            // position 是 layer 中心点 (相对父 layer); Container 全屏在 0,0 -> frame 即屏幕坐标
+        if (HasSthenoAncestor(self, 0) && w >= 30 && h >= 30) {
+            // 观测: 前 60 条记录谁在动
+            observeCount++;
+            if (observeCount <= 60) {
+                Log("obs[%lu]: %.0fx%.0f pos=(%.0f,%.0f) frame=(%.0f,%.0f)\n",
+                    (unsigned long)observeCount, w, h,
+                    pos.x, pos.y,
+                    self.frame.origin.x, self.frame.origin.y);
+            }
+            // 转屏幕坐标: pos 是父坐标系, 向上转换到 root layer
+            CALayer *root = self;
+            while (root.superlayer) root = root.superlayer;
+            CGPoint screenPos = pos;
+            if (self.superlayer) {
+                screenPos = [self.superlayer convertPoint:pos toLayer:root];
+            }
+            CGRect screen = UIScreen.mainScreen.bounds;
             CGFloat halfW = w / 2.0, halfH = h / 2.0;
             CGFloat minX = SideInset + halfW;
             CGFloat maxX = screen.size.width - SideInset - halfW;
             CGFloat minY = TopInset + halfH;
             CGFloat maxY = screen.size.height - BottomInset - halfH;
-            CGFloat nx = MIN(MAX(pos.x, minX), maxX);
-            CGFloat ny = MIN(MAX(pos.y, minY), maxY);
-            if (nx != pos.x || ny != pos.y) {
+            CGFloat nx = MIN(MAX(screenPos.x, minX), maxX);
+            CGFloat ny = MIN(MAX(screenPos.y, minY), maxY);
+            if (nx != screenPos.x || ny != screenPos.y) {
+                // 转回父坐标系
+                CGPoint fixedParent = screenPos;
+                if (self.superlayer) {
+                    fixedParent = [self.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
+                } else {
+                    fixedParent = CGPointMake(nx, ny);
+                }
                 clampCount++;
-                if (clampCount <= 40 || clampCount % 10 == 0) {
-                    Log("CLAMP[%lu]: %.0fx%.0f pos=(%.0f,%.0f) -> (%.0f,%.0f) [screen %.0fx%.0f]\n",
+                if (clampCount <= 60 || clampCount % 10 == 0) {
+                    Log("CLAMP[%lu]: %.0fx%.0f screenPos=(%.0f,%.0f) -> (%.0f,%.0f) [screen %.0fx%.0f]\n",
                         (unsigned long)clampCount, w, h,
-                        pos.x, pos.y, nx, ny,
+                        screenPos.x, screenPos.y, nx, ny,
                         screen.size.width, screen.size.height);
                 }
-                newPos = CGPointMake(nx, ny);
+                newPos = fixedParent;
             }
         }
     } @catch (NSException *e) {
@@ -88,5 +102,5 @@ __attribute__((constructor)) static void Start(void) {
         Class layerCls = CALayer.class;
         MSHookMessageEx(layerCls, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
     });
-    Log("SthenoBounds v3.4.9 loaded (CLAMP small-window layer position)\n");
+    Log("SthenoBounds v3.4.11 loaded (screen-coord clamp, all sizes)\n");
 }
