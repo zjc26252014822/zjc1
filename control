@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Swift State Bounds
-Version: 2.2.0
+Name: Stheno Reflect State Bounds
+Version: 2.3.0
 Architecture: iphoneos-arm64e
-Description: Bounds guard with early Swift ReflectManager allocation capture.
+Description: Bounds guard through Stheno ReflectManager constructor tracking.
 Maintainer: Local
 Author: Local
 Section: Tweaks
