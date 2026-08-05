@@ -6,7 +6,7 @@
 // Direct Swift-state guard. Stheno.ReflectManager's arm64e metadata exposes
 // 42 stored fields. finalCardFrame is field 19, finalOffset is field 18.
 static __weak id manager = nil;
-static CADisplayLink *link = nil;
+static CADisplayLink *guardDisplayLink = nil;
 static IMP origAlloc = NULL;
 static BOOL initialized = NO;
 static NSUInteger cardFrameOffset = 0;
@@ -64,8 +64,8 @@ static void Install(void) {
     if (!cls) return;
     MSHookMessageEx(object_getClass(cls), @selector(alloc), (IMP)HookAlloc, &origAlloc);
     SthenoReflectGuard *guard = [SthenoReflectGuard new];
-    link = [CADisplayLink displayLinkWithTarget:guard selector:@selector(tick:)];
-    objc_setAssociatedObject(link, @selector(tick:), guard, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    guardDisplayLink = [CADisplayLink displayLinkWithTarget:guard selector:@selector(tick:)];
+    objc_setAssociatedObject(guardDisplayLink, @selector(tick:), guard, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [guardDisplayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 %ctor { dispatch_async(dispatch_get_main_queue(), ^{ for (NSUInteger i=1;i<=40;i++) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(), ^{ Install(); }); }); }
