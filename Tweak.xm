@@ -33,8 +33,9 @@ static Ret16 HookOffsetFilter(id self, SEL _cmd) {
     if (!typeLogged) {
         Method m = class_getInstanceMethod(object_getClass(self), _cmd);
         if (m) {
-            const char *t = method_getReturnType(m);
+            char *t = method_copyReturnType(m);
             Log("offsetFilter return type encoding: %s\n", t ? t : "?");
+            if (t) free(t);
         }
         typeLogged = YES;
     }
