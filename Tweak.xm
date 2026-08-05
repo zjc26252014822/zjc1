@@ -9,133 +9,122 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// 边界修复 v3.4.2 - 松手回弹方案
-// 背景: v3.4.1 的 setFrame: hook 只夹到全屏宿主 (PlatformViewHost 430x932),
-//       真正的小窗是 SwiftUI 内部 offset/transform 控制, 不走 setFrame:.
-// 新策略:
-//   1. hook UIPanGestureRecognizer -setState:, 手势 Ended 时延迟 0.15s 回弹
-//   2. 遍历所有 UIWindow 的 view 树, 找类名含 SthenoWindow/Reflect 的**非全屏** view
-//   3. 把它的 frame 拉回屏幕内贴边 (origin.x = 0 或 screen.width-width, y 避开状态栏)
-//   4. 拖拽过程中完全不干预, 手感自由; 松手后自动回弹
-//   5. 保留 setFrame: hook 做实时兜底 (全屏宿主放行)
+// Stheno 边界观测版 v3.4.3-diag - 纯观测不干预
+// 目标: 找出小窗本体 (类名 + 移动机制: frame/center/transform)
+// 1. 每 2 秒 dump 所有 window 的类名/frame + 递归所有**非全屏** subview 类名/frame
+// 2. hook setFrame:/setCenter:/setTransform: 记录 Stheno 相关 view 的变化
+// 3. 只观测不改任何东西, 绝不崩溃
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
     if (fd < 0) return;
-    char b[512]; va_list a; va_start(a, fmt);
+    char b[1024]; va_list a; va_start(a, fmt);
     int n = vsnprintf(b, sizeof(b), fmt, a);
     va_end(a);
-    if (n > 0) write(fd, b, (size_t)(n < 511 ? n : 511));
+    if (n > 0) write(fd, b, (size_t)(n < 1023 ? n : 1023));
     close(fd);
 }
 
-static IMP OrigSetFrame;
-static IMP OrigPanSetState;
-static NSUInteger snapCount;
+static IMP OrigSetFrame, OrigSetCenter, OrigSetTransform;
+static NSUInteger obsCount;
 
-static BOOL IsSthenoView(UIView *v) {
+static BOOL IsSthenoRelated(UIView *v) {
     Class c = object_getClass(v);
     if (!c) return NO;
     const char *n = class_getName(c);
     if (!n) return NO;
-    return strstr(n, "SthenoWindow") || strstr(n, "ReflectView") ||
-           strstr(n, "ReflectStack") || strstr(n, "ReflectKeyboard");
-}
-// 接近全屏的 view (宿主容器) 跳过, 只处理真正的小窗
-static BOOL IsFullscreenHost(UIView *v) {
-    CGRect screen = UIScreen.mainScreen.bounds;
-    CGRect f = v.frame;
-    if (v.superview) f = [v.superview convertRect:v.frame toView:nil];
-    return f.size.width >= screen.size.width * 0.85 &&
-           f.size.height >= screen.size.height * 0.85;
+    return strstr(n, "Stheno") || strstr(n, "Reflect");
 }
 
-// 递归遍历 view 树, 把小窗 frame 拉回屏幕内贴边
-static void SnapIn(UIView *v, int depth) {
-    if (!v || depth > 8) return;
-    if (IsSthenoView(v) && !IsFullscreenHost(v)) {
-        CGRect screen = UIScreen.mainScreen.bounds;
-        CGRect sf = v.superview ? [v.superview convertRect:v.frame toView:nil] : v.frame;
-        if (isfinite(sf.origin.x) && isfinite(sf.origin.y) &&
-            sf.size.width > 1 && sf.size.height > 1) {
-            CGRect fixed = sf;
-            // X: 贴边回弹 (完全回到屏幕内)
-            if (fixed.origin.x < 0) fixed.origin.x = 0;
-            if (fixed.origin.x + fixed.size.width > screen.size.width)
-                fixed.origin.x = screen.size.width - fixed.size.width;
-            // Y: 顶部避开状态栏(47), 底部贴屏幕下沿
-            if (fixed.origin.y < 47) fixed.origin.y = 47;
-            if (fixed.origin.y + fixed.size.height > screen.size.height)
-                fixed.origin.y = screen.size.height - fixed.size.height;
-            if (fixed.origin.y < 47) fixed.origin.y = 47;
-            if (fixed.origin.x != sf.origin.x || fixed.origin.y != sf.origin.y) {
-                CGRect newF = v.superview ? [v.superview convertRect:fixed fromView:nil] : fixed;
-                snapCount++;
-                Log("snap[%lu]: %s (%.0f,%.0f %.0fx%.0f) -> (%.0f,%.0f)\n",
-                    (unsigned long)snapCount, class_getName(object_getClass(v)),
-                    sf.origin.x, sf.origin.y, sf.size.width, sf.size.height,
-                    fixed.origin.x, fixed.origin.y);
-                v.frame = newF;
-            }
-        }
+static void DumpView(UIView *v, int depth) {
+    if (!v || depth > 4) return;
+    Class c = object_getClass(v);
+    if (!c) return;
+    const char *n = class_getName(c);
+    CGRect screen = UIScreen.mainScreen.bounds;
+    CGRect f = v.frame;
+    // 记录: 所有 Stheno 相关 view + 所有非全屏 view
+    BOOL stheno = strstr(n, "Stheno") || strstr(n, "Reflect");
+    BOOL small = f.size.width > 20 && f.size.width < screen.size.width * 0.8 &&
+                 f.size.height > 20 && f.size.height < screen.size.height * 0.8;
+    if (stheno || small) {
+        CGAffineTransform t = v.transform;
+        obsCount++;
+        Log("view[%lu] d%d %s frame=(%.0f,%.0f %.0fx%.0f) center=(%.0f,%.0f) tx=%.0f ty=%.0f hidden=%d alpha=%.1f%s\n",
+            (unsigned long)obsCount, depth, n,
+            f.origin.x, f.origin.y, f.size.width, f.size.height,
+            v.center.x, v.center.y, t.tx, t.ty,
+            v.hidden ? 1 : 0, v.alpha,
+            stheno ? " [STHENO]" : "");
     }
-    for (UIView *sub in v.subviews) SnapIn(sub, depth + 1);
+    for (UIView *sub in v.subviews) DumpView(sub, depth + 1);
 }
-static void SnapBackAll(void) {
+
+static void DumpAll(void) {
     @try {
-        // iOS 15+: UIApplication.windows deprecated, 用 UIWindowScene.windows
         NSMutableArray *allWindows = [NSMutableArray array];
         for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
             if ([scene isKindOfClass:[UIWindowScene class]]) {
                 [allWindows addObjectsFromArray:[(UIWindowScene *)scene windows]];
             }
         }
+        Log("--- dump pass (windows=%lu) ---\n", (unsigned long)allWindows.count);
         for (UIWindow *w in allWindows) {
-            SnapIn(w, 0);
+            Class c = object_getClass(w);
+            const char *n = c ? class_getName(c) : "?";
+            Log("window: %s frame=(%.0f,%.0f %.0fx%.0f) hidden=%d key=%d\n",
+                n, w.frame.origin.x, w.frame.origin.y,
+                w.frame.size.width, w.frame.size.height,
+                w.hidden ? 1 : 0, w.isKeyWindow ? 1 : 0);
+            DumpView(w, 0);
         }
-        Log("snap pass done (total=%lu)\n", (unsigned long)snapCount);
     } @catch (NSException *e) {
-        Log("snap exception: %@", e.name);
+        Log("dump exception: %@", e.name);
     }
 }
-static void HookPanSetState(UIPanGestureRecognizer *self, SEL cmd, UIGestureRecognizerState state) {
-    ((void(*)(id,SEL,UIGestureRecognizerState))OrigPanSetState)(self,cmd,state);
-    if (state == UIGestureRecognizerStateEnded ||
-        state == UIGestureRecognizerStateCancelled ||
-        state == UIGestureRecognizerStateFailed) {
-        // 等 Stheno 处理完手势的最终位置再回弹
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ SnapBackAll(); });
-    }
-}
-// 实时兜底: setFrame: 夹紧 (仅非全屏小窗), 保留
+
+@interface DumpTimer : NSObject @end
+@implementation DumpTimer
+- (void)fire:(NSTimer *)t { DumpAll(); }
+@end
+
 static void HookSetFrame(UIView *self, SEL _cmd, CGRect frame) {
-    if (IsSthenoView(self) && !IsFullscreenHost(self)) {
-        CGRect screen = UIScreen.mainScreen.bounds;
-        CGRect sf = self.superview ? [self.superview convertRect:frame toView:nil] : frame;
-        if (isfinite(sf.origin.x) && isfinite(sf.origin.y)) {
-            CGRect fixed = sf;
-            if (fixed.origin.x < 0) fixed.origin.x = 0;
-            if (fixed.origin.x + fixed.size.width > screen.size.width)
-                fixed.origin.x = screen.size.width - fixed.size.width;
-            if (fixed.origin.y < 47) fixed.origin.y = 47;
-            if (fixed.origin.y + fixed.size.height > screen.size.height)
-                fixed.origin.y = screen.size.height - fixed.size.height;
-            if (fixed.origin.x != sf.origin.x || fixed.origin.y != sf.origin.y) {
-                frame = self.superview ? [self.superview convertRect:fixed fromView:nil] : fixed;
-            }
-        }
+    if (IsSthenoRelated(self)) {
+        Log("setFrame: %s (%.0f,%.0f %.0fx%.0f) -> (%.0f,%.0f %.0fx%.0f)\n",
+            class_getName(object_getClass(self)),
+            self.frame.origin.x, self.frame.origin.y, self.frame.size.width, self.frame.size.height,
+            frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
     }
     ((void(*)(id,SEL,CGRect))OrigSetFrame)(self, _cmd, frame);
+}
+static void HookSetCenter(UIView *self, SEL _cmd, CGPoint center) {
+    if (IsSthenoRelated(self)) {
+        Log("setCenter: %s (%.0f,%.0f) -> (%.0f,%.0f)\n",
+            class_getName(object_getClass(self)),
+            self.center.x, self.center.y, center.x, center.y);
+    }
+    ((void(*)(id,SEL,CGPoint))OrigSetCenter)(self, _cmd, center);
+}
+static void HookSetTransform(UIView *self, SEL _cmd, CGAffineTransform t) {
+    if (IsSthenoRelated(self)) {
+        Log("setTransform: %s tx=%.0f ty=%.0f\n",
+            class_getName(object_getClass(self)), t.tx, t.ty);
+    }
+    ((void(*)(id,SEL,CGAffineTransform))OrigSetTransform)(self, _cmd, t);
 }
 
 __attribute__((constructor)) static void Start(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        Class panCls = UIPanGestureRecognizer.class;
-        MSHookMessageEx(panCls, @selector(setState:), (IMP)HookPanSetState, &OrigPanSetState);
         Class viewCls = UIView.class;
         MSHookMessageEx(viewCls, @selector(setFrame:), (IMP)HookSetFrame, &OrigSetFrame);
+        MSHookMessageEx(viewCls, @selector(setCenter:), (IMP)HookSetCenter, &OrigSetCenter);
+        MSHookMessageEx(viewCls, @selector(setTransform:), (IMP)HookSetTransform, &OrigSetTransform);
     });
-    Log("SthenoBounds v3.4.2 loaded (pan-end snap-back + setFrame fallback)\n");
+    DumpTimer *dt = [DumpTimer new];
+    NSTimer *t = [NSTimer timerWithTimeInterval:2.0 target:dt selector:@selector(fire:) userInfo:nil repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes];
+    Log("SthenoBounds v3.4.3-diag loaded (observe only, no modification)\n");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ DumpAll(); });
 }

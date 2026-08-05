@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.2
+Version: 3.4.3
 Architecture: iphoneos-arm64e
-Description: Stheno 修复 v3.4.2：松手回弹方案——hook UIPanGestureRecognizer，手势结束时把 Stheno 小窗拉回屏幕内贴边；保留 setFrame 实时兜底。
+Description: Stheno 观测版 v3.4.3：纯观测不干预——每2秒dump窗口树+记录setFrame/setCenter/setTransform变化，定位小窗本体类名与移动机制。
 Maintainer: Local
 Author: Local
 Section: Tweaks
