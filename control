@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Reflect Bounds
-Version: 1.3.0
+Name: Stheno Reflect State Bounds
+Version: 2.0.0
 Architecture: iphoneos-arm64e
-Description: Bounds enforcement on Stheno ReflectManager final card state.
+Description: Bounds guard for Stheno ReflectManager card state.
 Maintainer: Local
 Author: Local
 Section: Tweaks
