@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Card Bounds
-Version: 3.2.0
+Name: Stheno Card Bounds Diagnostic
+Version: 3.2.1
 Architecture: iphoneos-arm64e
-Description: Safe settled-offset bounds correction for Stheno card.
+Description: Active Stheno card offset boundary diagnostic.
 Maintainer: Local
 Author: Local
 Section: Tweaks
