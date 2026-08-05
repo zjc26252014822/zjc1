@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.3.0
+Version: 3.3.1
 Architecture: iphoneos-arm64e
-Description: Stheno 修复 v3.3.0：修复 v3.2.0 崩溃（use-after-free）。Bounds 只 hook 真 init + 强持有对象 + 类名验证 + 手势结束/1Hz clamp；KeyboardFix KVC @try 保护。
+Description: Stheno 修复 v3.3.1：NSMutableArray 强持有替代 objc_retain（修链接错误）；崩溃安全（只 hook 真 init + vm_region 校验 + 手势结束/1Hz clamp）。
 Maintainer: Local
 Author: Local
 Section: Tweaks

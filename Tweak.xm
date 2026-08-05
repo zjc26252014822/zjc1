@@ -13,15 +13,14 @@
 #include <unistd.h>
 extern void MSHookFunction(void *,void *,void **);
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
-extern id objc_retain(id obj);   // ARC 内部函数, 显式声明供强持有
 
-// 边界修复 v3.3.0 - 崩溃安全版 (修复 v3.2.0 use-after-free)
+// 边界修复 v3.3.1 - 崩溃安全版 (修复 v3.2.0 use-after-free)
 // 策略:
 //   1. 只 hook 0x4da68 (标准 ObjC init, 返回值必然有效对象), 不 hook 0x4da44
 //      (无 prologue 的拷贝函数, 可能是 Swift struct copy helper, dest 不一定是对象)
-//   2. objc_retain 强持有收集的对象 (不再 __unsafe_unretained)
+//   2. NSMutableArray 强持有收集的对象 (ARC 自动 retain, 杜绝 UAF)
 //   3. IsReflectManager 用 vm_region 验证指针可读后才 object_getClass, 杜绝垃圾指针崩溃
-//   4. 不做每帧 CADisplayLink 扫描; 改为拖拽手势结束时 clamp 一次
+//   4. 不做每帧 CADisplayLink 扫描; 拖拽手势结束时 clamp + 1Hz 低频兜底
 //   5. 全路径日志 /var/mobile/Documents/SthenoBounds.log
 
 static void Log(const char *fmt, ...) {
@@ -35,7 +34,7 @@ static void Log(const char *fmt, ...) {
 }
 
 typedef void *(*InitFn)(void*,void*); static InitFn OrigInit;
-static __unsafe_unretained id managers[32]; static NSUInteger managerCount;
+static NSMutableArray *gManagers;           // 强持有 Reflect 实例 (ARC retain)
 static uintptr_t frameOff, offsetOff; static BOOL offsetsReady;
 static const CGFloat margin=12.0, topSafe=59.0, bottomSafe=34.0;
 static NSUInteger hookInitHits, rejectedNonReflect, clampRuns, clampFixed;
@@ -73,12 +72,13 @@ static void *HookInit(void*a,void*b){
         hookInitHits++;
         id obj = (__bridge id)o;
         if (IsReflectManager(obj)) {
-            if (managerCount < 32) {
-                objc_retain(obj);
-                managers[managerCount++] = obj;
-                Log("remember: %s %p total=%lu initHits=%lu\n",
-                    class_getName(object_getClass(obj)), o,
-                    (unsigned long)managerCount, (unsigned long)hookInitHits);
+            @synchronized(gManagers) {
+                if (gManagers.count < 32) {
+                    [gManagers addObject:obj];       // ARC 强持有
+                    Log("remember: %s %p total=%lu initHits=%lu\n",
+                        class_getName(object_getClass(obj)), o,
+                        (unsigned long)gManagers.count, (unsigned long)hookInitHits);
+                }
             }
         } else {
             rejectedNonReflect++;
@@ -108,37 +108,38 @@ static void Prepare(id object) {
 }
 static void ClampAll(void) {
     @try {
-    CGRect screen = UIScreen.mainScreen.bounds;
-    for (NSUInteger i=0; i<managerCount; i++) {
-        id object = managers[i];
-        if (!object || !IsReflectManager(object)) continue;
-        Prepare(object); if (!offsetsReady) continue;
-        uint8_t *base = (uint8_t *)(__bridge void *)object;
-        double *frame = (double *)(base + frameOff);
-        double *offset = (double *)(base + offsetOff);
-        double width=frame[0], height=frame[1];
-        if (!isfinite(width) || !isfinite(height) || width < 80 || height < 80) continue;
-        double baseX=(screen.size.width-width)*.5;
-        double baseY=(screen.size.height-height)*.5;
-        double minX=margin-baseX, maxX=screen.size.width-margin-width-baseX;
-        double minY=topSafe+margin-baseY, maxY=screen.size.height-bottomSafe-margin-height-baseY;
-        double nx=offset[0], ny=offset[1];
-        if (minX <= maxX && isfinite(offset[0])) nx = MIN(MAX(nx, minX), maxX);
-        if (minY <= maxY && isfinite(offset[1])) ny = MIN(MAX(ny, minY), maxY);
-        clampRuns++;
-        if (nx != offset[0] || ny != offset[1]) {
-            clampFixed++;
-            Log("clamp: %s %.0fx%.0f off %.0f,%.0f -> %.0f,%.0f\n",
-                class_getName(object_getClass(object)),
-                width, height, offset[0], offset[1], nx, ny);
-            offset[0]=nx; offset[1]=ny;
+        NSArray *snapshot;
+        @synchronized(gManagers) { snapshot = [gManagers copy]; }
+        CGRect screen = UIScreen.mainScreen.bounds;
+        for (id object in snapshot) {
+            if (!object || !IsReflectManager(object)) continue;
+            Prepare(object); if (!offsetsReady) continue;
+            uint8_t *base = (uint8_t *)(__bridge void *)object;
+            double *frame = (double *)(base + frameOff);
+            double *offset = (double *)(base + offsetOff);
+            double width=frame[0], height=frame[1];
+            if (!isfinite(width) || !isfinite(height) || width < 80 || height < 80) continue;
+            double baseX=(screen.size.width-width)*.5;
+            double baseY=(screen.size.height-height)*.5;
+            double minX=margin-baseX, maxX=screen.size.width-margin-width-baseX;
+            double minY=topSafe+margin-baseY, maxY=screen.size.height-bottomSafe-margin-height-baseY;
+            double nx=offset[0], ny=offset[1];
+            if (minX <= maxX && isfinite(offset[0])) nx = MIN(MAX(nx, minX), maxX);
+            if (minY <= maxY && isfinite(offset[1])) ny = MIN(MAX(ny, minY), maxY);
+            clampRuns++;
+            if (nx != offset[0] || ny != offset[1]) {
+                clampFixed++;
+                Log("clamp: %s %.0fx%.0f off %.0f,%.0f -> %.0f,%.0f\n",
+                    class_getName(object_getClass(object)),
+                    width, height, offset[0], offset[1], nx, ny);
+                offset[0]=nx; offset[1]=ny;
+            }
         }
-    }
     } @catch (NSException *e) {
         Log("clampAll exception: %@", e.name);
     }
 }
-// 低频兜底: 1Hz 强持有对象 clamp (对象不会释放, 访问安全), 防止手势 hook 不触发时边界无人修
+// 低频兜底: 1Hz clamp (对象被强持有, 访问安全)
 @interface ClampTimer : NSObject @end
 @implementation ClampTimer
 - (void)fire:(NSTimer *)t { ClampAll(); }
@@ -162,15 +163,16 @@ static void Added(const struct mach_header*h,intptr_t slide){
     Log("hook installed: init@0x4da68\n");
 }
 __attribute__((constructor))static void Start(void){
+    gManagers = [NSMutableArray arrayWithCapacity:8];
     _dyld_register_func_for_add_image(Added);
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         Class cls = UIPanGestureRecognizer.class;
         MSHookMessageEx(cls, @selector(setState:), (IMP)HookPanSetState, &OrigPanSetState);
     });
-    // 1Hz 低频兜底 clamp (强持有对象, 安全; 每帧级修正由手势结束触发)
+    // 1Hz 低频兜底 clamp (对象强持有, 安全)
     ClampTimer *ct = [ClampTimer new];
     NSTimer *t = [NSTimer timerWithTimeInterval:1.0 target:ct selector:@selector(fire:) userInfo:nil repeats:YES];
     [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes];
-    Log("SthenoBounds v3.3.0 loaded\n");
+    Log("SthenoBounds v3.3.1 loaded\n");
 }
