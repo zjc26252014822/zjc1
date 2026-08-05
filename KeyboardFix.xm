@@ -84,11 +84,16 @@ static CGFloat HookIntersectionHeight(id self, SEL _cmd, id windowScene,
 
     // 另一个 tweak 已创建 keyboardWindow —— 这是冲突触发点，记录现场。
     // 注：keyboardWindow 是 UIKeyboardImpl 的私有属性，编译期无声明，用 KVC 访问。
+    // KVC 对不存在的 key 会抛 NSUnknownKeyException，必须 @try 保护，否则 SpringBoard 崩溃。
     if ([self respondsToSelector:@selector(keyboardWindow)]) {
-        id kbWindow = [self valueForKey:@"keyboardWindow"];
-        if (kbWindow) {
-            FixLog(@"intersection: 冲突 main=%@ front=%@ keyboardWindow=%p scene=%@ orig=%f",
-                   gMainAppBundleID, front, kbWindow, windowScene, (double)orig);
+        @try {
+            id kbWindow = [self valueForKey:@"keyboardWindow"];
+            if (kbWindow) {
+                FixLog(@"intersection: 冲突 main=%@ front=%@ keyboardWindow=%p scene=%@ orig=%f",
+                       gMainAppBundleID, front, kbWindow, windowScene, (double)orig);
+            }
+        } @catch (NSException *e) {
+            FixLog(@"intersection: KVC keyboardWindow 抛异常 %@", e.name);
         }
     }
     return orig;
