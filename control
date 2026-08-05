@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Card Bounds
-Version: 1.1.0
+Name: Stheno Scene Bounds
+Version: 1.2.0
 Architecture: iphoneos-arm64e
-Description: Bounds correction for Stheno Medusa card view hierarchy.
+Description: Bounds correction after Stheno Medusa scene updates.
 Maintainer: Local
 Author: Local
 Section: Tweaks
