@@ -1,26 +1,22 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#import <QuartzCore/QuartzCore.h>
 #import <substrate.h>
 #import <objc/runtime.h>
-#import <mach-o/dyld.h>
-#import <dlfcn.h>
-#import <mach/mach.h>
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
-extern void MSHookFunction(void *,void *,void **);
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// 边界修复 v3.3.1 - 崩溃安全版 (修复 v3.2.0 use-after-free)
-// 策略:
-//   1. 只 hook 0x4da68 (标准 ObjC init, 返回值必然有效对象), 不 hook 0x4da44
-//      (无 prologue 的拷贝函数, 可能是 Swift struct copy helper, dest 不一定是对象)
-//   2. NSMutableArray 强持有收集的对象 (ARC 自动 retain, 杜绝 UAF)
-//   3. IsReflectManager 用 vm_region 验证指针可读后才 object_getClass, 杜绝垃圾指针崩溃
-//   4. 不做每帧 CADisplayLink 扫描; 拖拽手势结束时 clamp + 1Hz 低频兜底
+// 边界修复 v3.4.0 - 纯系统层方案 (不再碰 Stheno.dylib 代码)
+// 背景: v3.2.0/v3.3.x hook Stheno.dylib 内部函数 (arm64e + Swift) 必崩。
+//       崩溃 culprit 均为 000SthenoBounds.dylib, PC/LR 恒定 -> 同一处崩。
+// 新策略:
+//   1. hook 系统 UIView -setFrame: (UIKit 系统方法, MSHookMessageEx 安全)
+//   2. 只对类名含 SthenoWindow/ReflectView/ReflectStackView/ReflectKeyboard 的 view 处理
+//   3. 把将要设置的 frame 换算到屏幕坐标, 夹紧到屏幕内(至少 40pt 可见), 再转回
+//   4. view 由 UIKit 持有必然存活, 无 UAF, 无 PAC 问题
 //   5. 全路径日志 /var/mobile/Documents/SthenoBounds.log
 
 static void Log(const char *fmt, ...) {
@@ -33,146 +29,86 @@ static void Log(const char *fmt, ...) {
     close(fd);
 }
 
-typedef void *(*InitFn)(void*,void*); static InitFn OrigInit;
-static NSMutableArray *gManagers;           // 强持有 Reflect 实例 (ARC retain)
-static uintptr_t frameOff, offsetOff; static BOOL offsetsReady;
-static const CGFloat margin=12.0, topSafe=59.0, bottomSafe=34.0;
-static NSUInteger hookInitHits, rejectedNonReflect, clampRuns, clampFixed;
-static IMP OrigPanSetState;
+static IMP OrigSetFrame;
+static const CGFloat MinVisible = 40.0;   // 小窗至少保留 40pt 在屏幕内
+static NSUInteger hookCalls, clampedCount, lastLogCount;
 
-// 用 vm_region 验证指针指向可读内存 (防止 object_getClass 对垃圾指针崩溃)
-static BOOL MemoryReadable(uintptr_t addr) {
-    vm_address_t a = (vm_address_t)addr;
-    vm_size_t size = 0;
-    mach_port_t objName = MACH_PORT_NULL;
-    vm_region_basic_info_data_64_t info;
-    mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64;
-    kern_return_t kr = vm_region_64(mach_task_self(), &a, &size,
-                                    VM_REGION_BASIC_INFO_64,
-                                    (vm_region_info_t)&info, &cnt, &objName);
-    if (kr != KERN_SUCCESS) return NO;
-    return (info.protection & VM_PROT_READ) != 0;
-}
-
-static BOOL IsReflectManager(id o) {
-    if (!o) return NO;
-    uintptr_t p = (uintptr_t)o;
-    if (p < 0x100000 || (p & 7)) return NO;       // 排除 tagged/小指针/未对齐
-    if (!MemoryReadable(p)) return NO;              // 不可读 -> 不是堆对象
-    Class c = object_getClass(o);
-    if (!c || !MemoryReadable((uintptr_t)c)) return NO;
+static BOOL IsSthenoView(UIView *v) {
+    Class c = object_getClass(v);
+    if (!c) return NO;
     const char *n = class_getName(c);
     if (!n) return NO;
-    return strstr(n, "Reflect") != NULL;
+    return strstr(n, "SthenoWindow") || strstr(n, "ReflectView") ||
+           strstr(n, "ReflectStack") || strstr(n, "ReflectKeyboard");
 }
 
-static void *HookInit(void*a,void*b){
-    void *o = OrigInit ? OrigInit(a,b) : NULL;
-    if (o) {
-        hookInitHits++;
-        id obj = (__bridge id)o;
-        if (IsReflectManager(obj)) {
-            @synchronized(gManagers) {
-                if (gManagers.count < 32) {
-                    [gManagers addObject:obj];       // ARC 强持有
-                    Log("remember: %s %p total=%lu initHits=%lu\n",
-                        class_getName(object_getClass(obj)), o,
-                        (unsigned long)gManagers.count, (unsigned long)hookInitHits);
-                }
-            }
-        } else {
-            rejectedNonReflect++;
-            if (rejectedNonReflect <= 5) {
-                id rejectedObj = (__bridge id)o;
-                const char *rname = (MemoryReadable((uintptr_t)object_getClass(rejectedObj)) ?
-                                     (class_getName(object_getClass(rejectedObj)) ?: "?") : "?");
-                Log("reject: %p class=%s\n", o, rname);
-            }
-        }
+// 把 frame 换算到屏幕坐标并夹紧, 返回修正后的 superview 坐标 frame
+static CGRect ClampedFrame(UIView *self, CGRect frame) {
+    UIView *superview = self.superview;
+    CGRect screen = UIScreen.mainScreen.bounds;
+    CGRect sf;  // 屏幕坐标 frame
+
+    if (superview) {
+        sf = [superview convertRect:frame toView:nil];
+    } else {
+        sf = frame;  // 顶层 window, frame 即屏幕坐标
     }
-    return o;
+    // 防 NaN
+    if (!isfinite(sf.origin.x) || !isfinite(sf.origin.y) ||
+        !isfinite(sf.size.width) || !isfinite(sf.size.height)) return frame;
+    if (sf.size.width < 1 || sf.size.height < 1) return frame;
+
+    CGRect fixed = sf;
+    // X: 保证至少 MinVisible 在屏幕内
+    if (fixed.origin.x > screen.size.width - MinVisible)
+        fixed.origin.x = screen.size.width - MinVisible;
+    if (fixed.origin.x + fixed.size.width < MinVisible)
+        fixed.origin.x = MinVisible - fixed.size.width;
+    // Y: 顶部留状态栏空间, 底部留 home indicator
+    if (fixed.origin.y < 47)
+        fixed.origin.y = 47;
+    if (fixed.origin.y > screen.size.height - 47 - MinVisible)
+        fixed.origin.y = screen.size.height - 47 - MinVisible;
+    if (fixed.origin.y + fixed.size.height < 47 + MinVisible)
+        fixed.origin.y = 47 + MinVisible - fixed.size.height;
+    // 屏幕坐标下界也夹一下 (避免拖到 -x)
+    if (fixed.origin.x < -fixed.size.width + MinVisible)
+        fixed.origin.x = -fixed.size.width + MinVisible;
+
+    if (fixed.origin.x == sf.origin.x && fixed.origin.y == sf.origin.y)
+        return frame;  // 无需修正
+
+    // 转回 superview 坐标
+    if (superview) {
+        return [superview convertRect:fixed fromView:nil];
+    }
+    return fixed;
 }
 
-static BOOL Good(uintptr_t x){return x>=16&&x<=0x1000&&!(x&7);}
-static void Prepare(id object) {
-    if (offsetsReady || !object || !IsReflectManager(object)) return;
-    const uintptr_t *fields = (const uintptr_t *)((uintptr_t)[object class] + 10 * sizeof(uintptr_t));
-    uintptr_t f16 = fields[16], f18 = fields[18];
-    Log("prepare: %s fields[16]=%#llx [18]=%#llx\n",
-        class_getName(object_getClass(object)),
-        (unsigned long long)f16, (unsigned long long)f18);
-    if (!Good(f16) || !Good(f18)) { Log("prepare: bad offsets, skip\n"); return; }
-    frameOff = f16; offsetOff = f18; offsetsReady = YES;
-    Log("prepare: OK frameOff=%#llx offsetOff=%#llx\n",
-        (unsigned long long)frameOff, (unsigned long long)offsetOff);
-}
-static void ClampAll(void) {
-    @try {
-        NSArray *snapshot;
-        @synchronized(gManagers) { snapshot = [gManagers copy]; }
-        CGRect screen = UIScreen.mainScreen.bounds;
-        for (id object in snapshot) {
-            if (!object || !IsReflectManager(object)) continue;
-            Prepare(object); if (!offsetsReady) continue;
-            uint8_t *base = (uint8_t *)(__bridge void *)object;
-            double *frame = (double *)(base + frameOff);
-            double *offset = (double *)(base + offsetOff);
-            double width=frame[0], height=frame[1];
-            if (!isfinite(width) || !isfinite(height) || width < 80 || height < 80) continue;
-            double baseX=(screen.size.width-width)*.5;
-            double baseY=(screen.size.height-height)*.5;
-            double minX=margin-baseX, maxX=screen.size.width-margin-width-baseX;
-            double minY=topSafe+margin-baseY, maxY=screen.size.height-bottomSafe-margin-height-baseY;
-            double nx=offset[0], ny=offset[1];
-            if (minX <= maxX && isfinite(offset[0])) nx = MIN(MAX(nx, minX), maxX);
-            if (minY <= maxY && isfinite(offset[1])) ny = MIN(MAX(ny, minY), maxY);
-            clampRuns++;
-            if (nx != offset[0] || ny != offset[1]) {
-                clampFixed++;
-                Log("clamp: %s %.0fx%.0f off %.0f,%.0f -> %.0f,%.0f\n",
-                    class_getName(object_getClass(object)),
-                    width, height, offset[0], offset[1], nx, ny);
-                offset[0]=nx; offset[1]=ny;
+static void HookSetFrame(UIView *self, SEL _cmd, CGRect frame) {
+    hookCalls++;
+    if (IsSthenoView(self)) {
+        CGRect clamped = ClampedFrame(self, frame);
+        if (!CGRectEqualToRect(clamped, frame)) {
+            clampedCount++;
+            if (clampedCount - lastLogCount >= 20 || clampedCount < 5) {
+                lastLogCount = clampedCount;
+                Log("clamp[%lu]: %s frame(%.0f,%.0f %.0fx%.0f) -> (%.0f,%.0f %.0fx%.0f)\n",
+                    (unsigned long)clampedCount, class_getName(object_getClass(self)),
+                    frame.origin.x, frame.origin.y, frame.size.width, frame.size.height,
+                    clamped.origin.x, clamped.origin.y, clamped.size.width, clamped.size.height);
             }
+            frame = clamped;
         }
-    } @catch (NSException *e) {
-        Log("clampAll exception: %@", e.name);
     }
+    ((void(*)(id,SEL,CGRect))OrigSetFrame)(self, _cmd, frame);
 }
-// 低频兜底: 1Hz clamp (对象被强持有, 访问安全)
-@interface ClampTimer : NSObject @end
-@implementation ClampTimer
-- (void)fire:(NSTimer *)t { ClampAll(); }
-@end
-static void HookPanSetState(UIPanGestureRecognizer *self, SEL cmd, UIGestureRecognizerState state) {
-    ((void(*)(id,SEL,UIGestureRecognizerState))OrigPanSetState)(self,cmd,state);
-    if (state == UIGestureRecognizerStateEnded ||
-        state == UIGestureRecognizerStateCancelled ||
-        state == UIGestureRecognizerStateFailed) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ ClampAll(); });
-    }
-}
-static void Added(const struct mach_header*h,intptr_t slide){
-    static BOOL done; if(done)return;
-    Dl_info d={0};if(!dladdr(h,&d)||!d.dli_fname||!strstr(d.dli_fname,"Stheno.dylib"))return;
-    Log("found Stheno.dylib at %p\n", h);
-    // 只 hook 0x4da68: 标准 ObjC init (stp x29,x30 prologue, 拷贝72字节, 返回 self)
-    MSHookFunction((void*)((uintptr_t)h+0x4da68),(void*)HookInit,(void**)&OrigInit);
-    done=YES;
-    Log("hook installed: init@0x4da68\n");
-}
-__attribute__((constructor))static void Start(void){
-    gManagers = [NSMutableArray arrayWithCapacity:8];
-    _dyld_register_func_for_add_image(Added);
+
+__attribute__((constructor)) static void Start(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        Class cls = UIPanGestureRecognizer.class;
-        MSHookMessageEx(cls, @selector(setState:), (IMP)HookPanSetState, &OrigPanSetState);
+        Class cls = UIView.class;
+        MSHookMessageEx(cls, @selector(setFrame:), (IMP)HookSetFrame, &OrigSetFrame);
     });
-    // 1Hz 低频兜底 clamp (对象强持有, 安全)
-    ClampTimer *ct = [ClampTimer new];
-    NSTimer *t = [NSTimer timerWithTimeInterval:1.0 target:ct selector:@selector(fire:) userInfo:nil repeats:YES];
-    [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes];
-    Log("SthenoBounds v3.3.1 loaded\n");
+    Log("SthenoBounds v3.4.0 loaded (UIView setFrame: hook, no Stheno code touched)\n");
 }
