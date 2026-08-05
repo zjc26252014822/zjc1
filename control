@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Fix (Bounds + Keyboard)
+Name: Stheno Card Bounds
 Version: 3.2.0
 Architecture: iphoneos-arm64e
-Description: Stheno 修复 v3.2.0：边界 hook 修正（0x4da68 init + 0x4da44 copy）+ 完整运行时日志；键盘修复 Filter 修正为 SpringBoard。
+Description: Safe settled-offset bounds correction for Stheno card.
 Maintainer: Local
 Author: Local
 Section: Tweaks
