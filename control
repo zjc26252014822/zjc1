@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Card Bounds
-Version: 1.0.0
+Version: 1.1.0
 Architecture: iphoneos-arm64e
-Description: Keeps Stheno Medusa floating app cards inside screen boundaries.
+Description: Bounds correction for Stheno Medusa card view hierarchy.
 Maintainer: Local
 Author: Local
 Section: Tweaks
