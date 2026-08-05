@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.1
+Version: 3.4.2
 Architecture: iphoneos-arm64e
-Description: Stheno 修复 v3.4.1：修复 v3.4.0 全屏宿主(PlatformViewHost 430x932)被误夹导致界面下移——接近全屏的 view 直接放行，只夹紧真正的小窗。
+Description: Stheno 修复 v3.4.2：松手回弹方案——hook UIPanGestureRecognizer，手势结束时把 Stheno 小窗拉回屏幕内贴边；保留 setFrame 实时兜底。
 Maintainer: Local
 Author: Local
 Section: Tweaks
