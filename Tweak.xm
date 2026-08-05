@@ -46,9 +46,10 @@ static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     return HasSthenoAncestor(layer.superlayer, depth + 1);
 }
 
-// 把一个层的屏幕位置拉回屏幕内 (贴边)
+// 把一个层的屏幕位置拉回屏幕内 (贴边) - 仅 Stheno 相关层
 static void SnapLayerIn(CALayer *layer, CGRect screen) {
     @try {
+        if (!HasSthenoAncestor(layer, 0)) return;
         CGFloat w = layer.bounds.size.width, h = layer.bounds.size.height;
         // 只处理中型层 (小窗 30~420), 排除全屏层和小图标
         if (w < 30 || h < 30) return;
