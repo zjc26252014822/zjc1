@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Reflect State Bounds
-Version: 2.3.0
+Name: Stheno Reflect Trace
+Version: 2.4.0
 Architecture: iphoneos-arm64e
-Description: Bounds guard through Stheno ReflectManager constructor tracking.
+Description: Minimal ReflectManager state trace for Stheno Medusa debugging.
 Maintainer: Local
 Author: Local
 Section: Tweaks
