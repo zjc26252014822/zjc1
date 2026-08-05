@@ -2,7 +2,7 @@ name: Build Stheno RootHide Patch
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, fix-v3.2]
     paths-ignore: [build-failure.log]
 permissions:
   contents: write
@@ -35,7 +35,9 @@ jobs:
           test -f build-failure.log || echo 'Workflow stopped before command logging started.' > build-failure.log
           git add -f build-failure.log
           git diff --cached --quiet || git commit -m 'Record Actions build diagnostic'
-          git push origin HEAD:main
+          # Push the diagnostic back to the branch that triggered this run, not main,
+          # so concurrent work on main never collides with the build bot's commits.
+          git push origin HEAD:"${GITHUB_REF_NAME}"
       - name: Upload package and diagnostic
         if: always()
         uses: actions/upload-artifact@v4
