@@ -53,9 +53,11 @@ static BOOL gInjected = NO;
 static CGFloat (*orig_intersectionHeight)(id, SEL, id, BOOL *, BOOL);
 static UIView *(*orig_remoteKeyboardWindow)(id, SEL, id, BOOL);
 
-// ---------------- 辅助：当前应用的 bundle id ----------------
+// ---------------- 辅助：当前进程所在 app 的 bundle id ----------------
+// 注：UIApplication 没有公开的 bundleIdentifier 属性（私有 API 编译期无声明），
+// 用 NSBundle.mainBundle 取当前进程的 bundle id，效果相同且公开可用。
 static NSString *CurrentFrontBundleID(void) {
-    return UIApplication.sharedApplication.bundleIdentifier ?: @"";
+    return NSBundle.mainBundle.bundleIdentifier ?: @"";
 }
 
 // ---------------- 核心 hook：intersectionHeight（键盘高度计算）----------------
@@ -81,8 +83,9 @@ static CGFloat HookIntersectionHeight(id self, SEL _cmd, id windowScene,
     if (!mainIsFront) return orig;
 
     // 另一个 tweak 已创建 keyboardWindow —— 这是冲突触发点，记录现场。
+    // 注：keyboardWindow 是 UIKeyboardImpl 的私有属性，编译期无声明，用 KVC 访问。
     if ([self respondsToSelector:@selector(keyboardWindow)]) {
-        id kbWindow = [self keyboardWindow];
+        id kbWindow = [self valueForKey:@"keyboardWindow"];
         if (kbWindow) {
             FixLog(@"intersection: 冲突 main=%@ front=%@ keyboardWindow=%p scene=%@ orig=%f",
                    gMainAppBundleID, front, kbWindow, windowScene, (double)orig);
