@@ -10,10 +10,13 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno v3.4.12 - 修复黑框 + offsetFilter 观测
-// 1) 修复 v3.4.11: 全屏宿主(430x932)被误夹 -> 硬性排除 >=90% 屏幕的层
-// 2) 观测 ReflectManager -offsetFilter (挂起模式的边界入口, v3.4.5/6 没测到因为当时没挂起)
-// 3) 只夹中型层 (100~420) 的小窗内容层
+// Stheno v3.4.13 - 位置出屏才夹 + 完整观测
+// 问题: v3.4.12 夹 303x303 但小窗照样拖出 -> 303x303 不是视觉主体
+//       v3.4.8 观测到 344x746 被拖出屏, 但 v3.4.10-12 没夹到它
+//       (setPosition 时 bounds 可能为 0, 尺寸判断失效)
+// 方案: 1) 不依赖尺寸判断, 用"位置出屏"判断 (屏幕坐标超出边界即夹)
+//       2) 排除全屏层(>=90%屏) 和 极小层(<30)
+//       3) 记录所有 Stheno 祖先层 setPosition (前100条), 确认谁是视觉主体
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -26,7 +29,8 @@ static void Log(const char *fmt, ...) {
 }
 
 static IMP OrigSetPosition;
-static NSUInteger clampCount;
+static NSUInteger clampCount, obsCount;
+static const CGFloat TopInset = 47.0, BottomInset = 34.0;
 
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     if (!layer || depth > 10) return NO;
@@ -45,87 +49,53 @@ static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
 static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
     CGPoint newPos = pos;
     @try {
-        CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-        CGRect screen = UIScreen.mainScreen.bounds;
-        // 硬性排除全屏宿主: >=90% 屏幕尺寸绝对不碰 (修复 v3.4.11 黑框)
-        if (w >= screen.size.width * 0.9 || h >= screen.size.height * 0.9) {
+        if (!HasSthenoAncestor(self, 0)) {
             ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
             return;
         }
-        // 只夹中型层 (小窗内容层 100~420)
-        if (HasSthenoAncestor(self, 0) && w >= 100 && w <= 420 && h >= 100 && h <= 420) {
-            CALayer *root = self;
-            while (root.superlayer) root = root.superlayer;
-            CGPoint screenPos = pos;
-            if (self.superlayer) screenPos = [self.superlayer convertPoint:pos toLayer:root];
-            CGFloat halfW = w / 2.0, halfH = h / 2.0;
-            CGFloat minX = halfW, maxX = screen.size.width - halfW;
-            CGFloat minY = 47.0 + halfH, maxY = screen.size.height - 34.0 - halfH;
-            CGFloat nx = MIN(MAX(screenPos.x, minX), maxX);
-            CGFloat ny = MIN(MAX(screenPos.y, minY), maxY);
-            if (nx != screenPos.x || ny != screenPos.y) {
-                CGPoint fixedParent = screenPos;
-                if (self.superlayer) fixedParent = [self.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
-                else fixedParent = CGPointMake(nx, ny);
-                clampCount++;
-                if (clampCount <= 40 || clampCount % 10 == 0) {
-                    Log("CLAMP[%lu]: %.0fx%.0f screenPos=(%.0f,%.0f) -> (%.0f,%.0f)\n",
-                        (unsigned long)clampCount, w, h,
-                        screenPos.x, screenPos.y, nx, ny);
-                }
-                newPos = fixedParent;
+        CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
+        CGRect screen = UIScreen.mainScreen.bounds;
+        // 排除全屏层 (>=90% 屏) 和极小层 (<30)
+        if (w >= screen.size.width * 0.9 || h >= screen.size.height * 0.9 || w < 30 || h < 30) {
+            ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
+            return;
+        }
+        // 观测: 记录前 100 条 (含尺寸/位置/是否出屏)
+        obsCount++;
+        if (obsCount <= 100) {
+            Log("obs[%lu]: %.0fx%.0f pos=(%.0f,%.0f) frame=(%.0f,%.0f %.0fx%.0f) cls=%s\n",
+                (unsigned long)obsCount, w, h,
+                pos.x, pos.y,
+                self.frame.origin.x, self.frame.origin.y,
+                self.frame.size.width, self.frame.size.height,
+                class_getName(object_getClass(self)));
+        }
+        // 屏幕坐标 (转 root; 失败则用 pos)
+        CALayer *root = self;
+        while (root.superlayer) root = root.superlayer;
+        CGPoint sp = pos;
+        if (self.superlayer) sp = [self.superlayer convertPoint:pos toLayer:root];
+        // 位置出屏才夹: 中心点超出 [half, screen-half] 范围
+        CGFloat hw = w / 2.0, hh = h / 2.0;
+        CGFloat minX = hw, maxX = screen.size.width - hw;
+        CGFloat minY = TopInset + hh, maxY = screen.size.height - BottomInset - hh;
+        CGFloat nx = MIN(MAX(sp.x, minX), maxX);
+        CGFloat ny = MIN(MAX(sp.y, minY), maxY);
+        if (nx != sp.x || ny != sp.y) {
+            CGPoint fixed = sp;
+            if (self.superlayer) fixed = [self.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
+            else fixed = CGPointMake(nx, ny);
+            clampCount++;
+            if (clampCount <= 60 || clampCount % 10 == 0) {
+                Log("CLAMP[%lu]: %.0fx%.0f sp=(%.0f,%.0f) -> (%.0f,%.0f)\n",
+                    (unsigned long)clampCount, w, h, sp.x, sp.y, nx, ny);
             }
+            newPos = fixed;
         }
     } @catch (NSException *e) {
         Log("clamp exception: %@\n", e.name);
     }
     ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, newPos);
-}
-
-// ---- offsetFilter 观测 (挂起模式边界入口) ----
-typedef struct { double a, b; } Ret16;
-static Ret16 (*OrigOffsetFilter)(id, SEL);
-static NSUInteger offsetCalls;
-static BOOL typeLogged;
-
-static Ret16 HookOffsetFilter(id self, SEL _cmd) {
-    if (!typeLogged) {
-        Method m = class_getInstanceMethod(object_getClass(self), _cmd);
-        if (m) {
-            char *t = method_copyReturnType(m);
-            Log("offsetFilter return type encoding: %s\n", t ? t : "?");
-            if (t) free(t);
-        }
-        typeLogged = YES;
-    }
-    Ret16 r = OrigOffsetFilter(self, _cmd);
-    offsetCalls++;
-    if (offsetCalls <= 50 || offsetCalls % 20 == 0) {
-        Log("offsetFilter[%lu]: x=%.1f y=%.1f\n", (unsigned long)offsetCalls, r.a, r.b);
-    }
-    return r;
-}
-
-static void TryHookOffsetFilter(void) {
-    static int attempt = 0;
-    const char *names[] = {"_TtC6Stheno14ReflectManager", "Stheno.ReflectManager", NULL};
-    for (int i = 0; names[i]; i++) {
-        Class cls = NSClassFromString([NSString stringWithUTF8String:names[i]]);
-        if (!cls) continue;
-        SEL sel = NSSelectorFromString(@"offsetFilter");
-        if (sel && [cls instancesRespondToSelector:sel]) {
-            if (OrigOffsetFilter == NULL) {
-                MSHookMessageEx(cls, sel, (IMP)HookOffsetFilter, (IMP *)&OrigOffsetFilter);
-                Log("HOOKED offsetFilter (attempt %d)\n", attempt);
-            }
-            return;
-        }
-    }
-    attempt++;
-    if (attempt < 20) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ TryHookOffsetFilter(); });
-    }
 }
 
 __attribute__((constructor)) static void Start(void) {
@@ -134,7 +104,5 @@ __attribute__((constructor)) static void Start(void) {
         Class layerCls = CALayer.class;
         MSHookMessageEx(layerCls, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
     });
-    Log("SthenoBounds v3.4.12 loaded (fix black frame + offsetFilter observe)\n");
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{ TryHookOffsetFilter(); });
+    Log("SthenoBounds v3.4.13 loaded (position-out-of-screen clamp + full observe)\n");
 }

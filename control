@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.12
+Version: 3.4.13
 Architecture: iphoneos-arm64e
-Description: Stheno v3.4.12：修复黑框（硬性排除>=90%屏幕尺寸的层）+ 观测挂起模式入口 offsetFilter + 只夹100-420中型层。
+Description: Stheno v3.4.13：位置出屏才夹（不依赖尺寸判断，修复bounds=0漏夹344x746）+ 完整观测记录所有Stheno层setPosition。
 Maintainer: Local
 Author: Local
 Section: Tweaks
