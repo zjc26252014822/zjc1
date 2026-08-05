@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.3
+Version: 3.4.4
 Architecture: iphoneos-arm64e
-Description: Stheno 观测版 v3.4.3：纯观测不干预——每2秒dump窗口树+记录setFrame/setCenter/setTransform变化，定位小窗本体类名与移动机制。
+Description: Stheno 观测版 v3.4.4：枚举 Stheno/Reflect 类全部 ObjC 方法名 + hook setBounds/setFrame/setCenter/setTransform，定位小窗移动的真实 selector。
 Maintainer: Local
 Author: Local
 Section: Tweaks
