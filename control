@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Card Bounds
-Version: 3.0.0
+Name: Stheno Fix (Bounds + Keyboard)
+Version: 3.1.0
 Architecture: iphoneos-arm64e
-Description: Bounds guard for Stheno Medusa final drag offset.
+Description: Stheno 修复：小窗边界夹紧（CADisplayLink 每帧 clamp finalOffset）+ 分屏键盘仲裁修复（000SthenoBounds + 000SthenoKeyboardFix）。
 Maintainer: Local
 Author: Local
 Section: Tweaks
