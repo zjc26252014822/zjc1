@@ -1,46 +1,45 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <substrate.h>
 
-static UIViewController *TopController(UIViewController *vc) {
+static BOOL reported = NO;
+static IMP OrigInitFrame, OrigInitScene;
+
+static UIViewController *Top(UIViewController *vc) {
     while (vc.presentedViewController) vc = vc.presentedViewController;
     return vc;
 }
-static void AddTree(NSMutableString *out, UIView *view, NSInteger depth) {
-    if (depth > 8 || out.length > 11500) return;
-    NSString *pad = [@"" stringByPaddingToLength:(NSUInteger)(depth * 2) withString:@" " startingAtIndex:0];
-    CGRect f = view.frame; CGAffineTransform t = view.transform;
-    [out appendFormat:@"%@%@ f=(%.0f,%.0f %.0fx%.0f) t=(%.2f %.2f %.2f %.2f %.1f %.1f)\n", pad, NSStringFromClass(view.class), f.origin.x, f.origin.y, f.size.width, f.size.height, t.a,t.b,t.c,t.d,t.tx,t.ty];
-    for (UIView *child in view.subviews) AddTree(out, child, depth + 1);
-}
-static NSString *Report(void) {
-    NSMutableString *out = [NSMutableString string];
-    Class target = NSClassFromString(@"Stheno.SthenoWindow");
-    [out appendFormat:@"Target: %@\n\n", target ? @"FOUND" : @"NOT FOUND"];
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
-            if (window.hidden) continue;
-            [out appendFormat:@"WINDOW %@ Stheno=%d\n", NSStringFromClass(window.class), target ? [window isKindOfClass:target] : 0];
-            AddTree(out, window, 1); [out appendString:@"\n"];
-        }
+static void Report(UIWindow *window) {
+    if (reported || !window) return;
+    reported = YES;
+    NSMutableString *text = [NSMutableString string];
+    CGRect f = window.frame; CGAffineTransform t = window.transform;
+    [text appendFormat:@"Window\nf=(%.0f,%.0f %.0fx%.0f)\nt=(%.2f %.2f %.2f %.2f %.1f %.1f)\n\nDirect subviews (%lu):\n",f.origin.x,f.origin.y,f.size.width,f.size.height,t.a,t.b,t.c,t.d,t.tx,t.ty,(unsigned long)window.subviews.count];
+    NSUInteger limit = MIN(window.subviews.count, (NSUInteger)8);
+    for (NSUInteger i=0; i<limit; i++) {
+        UIView *v = window.subviews[i]; CGRect x=v.frame; CGAffineTransform a=v.transform;
+        [text appendFormat:@"%lu %@\nf=(%.0f,%.0f %.0fx%.0f)\nt=(%.2f %.2f %.2f %.2f %.1f %.1f)\n",(unsigned long)i,NSStringFromClass(v.class),x.origin.x,x.origin.y,x.size.width,x.size.height,a.a,a.b,a.c,a.d,a.tx,a.ty];
     }
-    return out;
-}
-static UIWindow *FindWindow(void) {
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows)
-            if (!window.hidden && window.rootViewController) return window;
-    }
-    return nil;
-}
-static void ShowReport(void) {
-    UIWindow *window = FindWindow(); if (!window) return;
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Stheno geometry" message:Report() preferredStyle:UIAlertControllerStyleAlert];
+    UIViewController *root = window.rootViewController; if (!root) return;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Stheno target only" message:text preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    [TopController(window.rootViewController) presentViewController:alert animated:YES completion:nil];
+    [Top(root) presentViewController:alert animated:YES completion:nil];
 }
-%ctor {
-    // Gives time to unlock, enter SpringBoard and open a Stheno window.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ ShowReport(); });
+static id InitFrame(UIWindow *self, SEL cmd, CGRect frame) {
+    self=((id(*)(id,SEL,CGRect))OrigInitFrame)(self,cmd,frame);
+    if (self) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/2),dispatch_get_main_queue(),^{ Report(self); });
+    return self;
 }
+static id InitScene(UIWindow *self, SEL cmd, id scene) {
+    self=((id(*)(id,SEL,id))OrigInitScene)(self,cmd,scene);
+    if (self) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/2),dispatch_get_main_queue(),^{ Report(self); });
+    return self;
+}
+static void Install(void) {
+    static Class c; if (c) return;
+    c=NSClassFromString(@"Stheno.SthenoWindow"); if (!c) return;
+    MSHookMessageEx(c,@selector(initWithFrame:),(IMP)InitFrame,&OrigInitFrame);
+    SEL s=NSSelectorFromString(@"initWithWindowScene:");
+    if ([c instancesRespondToSelector:s]) MSHookMessageEx(c,s,(IMP)InitScene,&OrigInitScene);
+}
+%ctor { dispatch_async(dispatch_get_main_queue(),^{ for(NSUInteger i=1;i<=30;i++) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(),^{Install();}); }); }
