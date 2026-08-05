@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.9
+Version: 3.4.10
 Architecture: iphoneos-arm64e
-Description: Stheno 边界修复 v3.4.9：定位成功（小窗=303x303 CALayer 经 setPosition 移动），clamp 其 position 到屏幕内贴边。
+Description: Stheno 边界修复 v3.4.10：修复 v3.4.9 漏掉真正被拖的层——344x746 内容层（尺寸上限从420放宽到屏幕85%）。
 Maintainer: Local
 Author: Local
 Section: Tweaks

@@ -50,10 +50,13 @@ static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
 static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
     CGPoint newPos = pos;
     @try {
-        // 只看 150-400 尺寸的层 (小窗本体, 过滤小图标)
+        // 只看非全屏的大层 (小窗内容层, 如 344x746 / 303x303; 过滤小图标)
+        // v3.4.9 只夹 150-420 漏掉了 344x746 真正被拖的层, 改为屏幕尺寸 85% 以内都夹
         CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-        if (w >= 150 && w <= 420 && h >= 150 && h <= 420 && HasSthenoAncestor(self, 0)) {
-            CGRect screen = UIScreen.mainScreen.bounds;
+        CGRect screen = UIScreen.mainScreen.bounds;
+        BOOL bigEnough = w >= 100 && h >= 100;
+        BOOL notFullscreen = w < screen.size.width * 0.85 && h < screen.size.height * 0.85;
+        if (bigEnough && notFullscreen && HasSthenoAncestor(self, 0)) {
             // position 是 layer 中心点 (相对父 layer); Container 全屏在 0,0 -> frame 即屏幕坐标
             CGFloat halfW = w / 2.0, halfH = h / 2.0;
             CGFloat minX = SideInset + halfW;
@@ -64,7 +67,7 @@ static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
             CGFloat ny = MIN(MAX(pos.y, minY), maxY);
             if (nx != pos.x || ny != pos.y) {
                 clampCount++;
-                if (clampCount <= 30 || clampCount % 10 == 0) {
+                if (clampCount <= 40 || clampCount % 10 == 0) {
                     Log("CLAMP[%lu]: %.0fx%.0f pos=(%.0f,%.0f) -> (%.0f,%.0f) [screen %.0fx%.0f]\n",
                         (unsigned long)clampCount, w, h,
                         pos.x, pos.y, nx, ny,
