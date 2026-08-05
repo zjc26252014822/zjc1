@@ -2,28 +2,37 @@
 #import <Foundation/Foundation.h>
 #import <substrate.h>
 
-// Stheno's binary hooks this private scene-update method. The card is positioned
-// through FrontBoard scene settings, so enforce bounds immediately after each update.
-static IMP OrigSceneUpdate;
-static __thread BOOL fixing = NO;
-static const CGFloat M=12.0;
+// Directly clamp Stheno's own state model. Reverse-engineering the arm64e
+// slice shows ReflectManager owns finalCardFrame / finalFrame / finalOffset.
+static IMP origFinalCardFrame = NULL;
+static IMP origFinalFrame = NULL;
+static const CGFloat margin = 12.0;
 
-static BOOL Clamp(UIView *v, UIView *host) {
-    if (!v||v.hidden||v.alpha<.01||v==host||fixing) return NO;
-    CGRect h=host.bounds,f=v.frame; UIEdgeInsets s=host.safeAreaInsets;
-    if (f.size.width<120||f.size.height<120||f.size.width>h.size.width*1.3||f.size.height>h.size.height*1.3) return NO;
-    CGFloat l=s.left+M,r=h.size.width-s.right-M,t=s.top+M,b=h.size.height-s.bottom-M,dx=0,dy=0;
-    if(CGRectGetMinX(f)<l)dx=l-CGRectGetMinX(f); else if(CGRectGetMaxX(f)>r)dx=r-CGRectGetMaxX(f);
-    if(CGRectGetMinY(f)<t)dy=t-CGRectGetMinY(f); else if(CGRectGetMaxY(f)>b)dy=b-CGRectGetMaxY(f);
-    if(!dx&&!dy)return NO; fixing=YES; CGPoint c=v.center;c.x+=dx;c.y+=dy;v.center=c;fixing=NO;return YES;
+static CGRect Clamp(CGRect f) {
+    CGRect b = UIScreen.mainScreen.bounds;
+    // Window safe-area cannot be used here because this is Stheno model state;
+    // use conservative iPhone 16.4 status/home reserved zones.
+    CGFloat left=margin, right=margin, top=59.0+margin, bottom=34.0+margin;
+    CGFloat minX=CGRectGetMinX(b)+left, minY=CGRectGetMinY(b)+top;
+    CGFloat maxX=CGRectGetMaxX(b)-right-CGRectGetWidth(f);
+    CGFloat maxY=CGRectGetMaxY(b)-bottom-CGRectGetHeight(f);
+    f.origin.x = maxX < minX ? (minX+maxX)*.5 : MIN(MAX(f.origin.x,minX),maxX);
+    f.origin.y = maxY < minY ? (minY+maxY)*.5 : MIN(MAX(f.origin.y,minY),maxY);
+    return f;
 }
-static BOOL Scan(UIView *v,UIView *host,NSUInteger d){ if(d>14)return NO; for(UIView *x in [v.subviews reverseObjectEnumerator])if(Scan(x,host,d+1))return YES; return Clamp(v,host); }
-static void CorrectController(id controller) {
-    if(![controller respondsToSelector:@selector(view)])return;
-    UIView *root=((id(*)(id,SEL))objc_msgSend)(controller,@selector(view));
-    if(root&&root.superview) Scan(root,root.superview,0);
+static void SetFinalCardFrame(id self, SEL cmd, CGRect frame) {
+    ((void(*)(id,SEL,CGRect))origFinalCardFrame)(self,cmd,Clamp(frame));
 }
-// Selector from Stheno.dylib: _scene:interceptUpdateWithNewSettings:
-static void HookSceneUpdate(id self,SEL cmd,id scene,id settings){ ((void(*)(id,SEL,id,id))OrigSceneUpdate)(self,cmd,scene,settings); CorrectController(self); }
-static void Install(void){ static Class c; if(c)return; c=NSClassFromString(@"SBDeviceApplicationSceneViewController"); if(!c)return; SEL s=NSSelectorFromString(@"_scene:interceptUpdateWithNewSettings:"); if([c instancesRespondToSelector:s]) MSHookMessageEx(c,s,(IMP)HookSceneUpdate,&OrigSceneUpdate); }
-%ctor{dispatch_async(dispatch_get_main_queue(),^{for(NSUInteger i=1;i<=40;i++)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(),^{Install();});});}
+static void SetFinalFrame(id self, SEL cmd, CGRect frame) {
+    ((void(*)(id,SEL,CGRect))origFinalFrame)(self,cmd,Clamp(frame));
+}
+static void Install(void) {
+    static Class cls; if(cls) return;
+    cls=NSClassFromString(@"Stheno.ReflectManager"); if(!cls) return;
+    SEL card=NSSelectorFromString(@"setFinalCardFrame:");
+    SEL frame=NSSelectorFromString(@"setFinalFrame:");
+    // Only hook selectors which Stheno actually exposes at runtime.
+    if([cls instancesRespondToSelector:card]) MSHookMessageEx(cls,card,(IMP)SetFinalCardFrame,&origFinalCardFrame);
+    if([cls instancesRespondToSelector:frame]) MSHookMessageEx(cls,frame,(IMP)SetFinalFrame,&origFinalFrame);
+}
+%ctor { dispatch_async(dispatch_get_main_queue(),^{ for(NSUInteger i=1;i<=40;i++) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(),^{Install();}); }); }
