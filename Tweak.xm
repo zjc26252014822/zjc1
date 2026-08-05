@@ -46,7 +46,7 @@ static BOOL ClampOne(id o) {
     if(moving){stableFrames=0;corrected=NO;return;}
     if(!haveLast||corrected)return;
     if(++stableFrames<12)return;
-    BOOL did=NO;for(NSUInteger i=0;i<managerCount;i++)did|=ClampOne(managers[i]);
+    for(NSUInteger i=0;i<managerCount;i++) ClampOne(managers[i]);
     corrected=YES;
 }
 @end
