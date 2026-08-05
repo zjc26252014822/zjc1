@@ -10,11 +10,10 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno 边界修复 v3.4.11 - 屏幕坐标 clamp
-// v3.4.10 失败: 只夹到 303x303 装饰层; 用户拖的 344x746 内容层没被夹
-// 关键修正: 1) position 转屏幕坐标再 clamp (父层可能有偏移/transform, 直接夹 pos 基准错)
-//           2) 任何尺寸的 Stheno 层都处理 (> 30pt, 过滤小图标), 不卡 150-420
-//           3) 顺带观测: 记录所有 Stheno 层 setPosition (前60条), 确认到底谁在动
+// Stheno v3.4.12 - 修复黑框 + offsetFilter 观测
+// 1) 修复 v3.4.11: 全屏宿主(430x932)被误夹 -> 硬性排除 >=90% 屏幕的层
+// 2) 观测 ReflectManager -offsetFilter (挂起模式的边界入口, v3.4.5/6 没测到因为当时没挂起)
+// 3) 只夹中型层 (100~420) 的小窗内容层
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -27,8 +26,7 @@ static void Log(const char *fmt, ...) {
 }
 
 static IMP OrigSetPosition;
-static NSUInteger clampCount, observeCount;
-static const CGFloat TopInset = 47.0, BottomInset = 34.0, SideInset = 0.0;
+static NSUInteger clampCount;
 
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     if (!layer || depth > 10) return NO;
@@ -48,44 +46,32 @@ static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
     CGPoint newPos = pos;
     @try {
         CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-        if (HasSthenoAncestor(self, 0) && w >= 30 && h >= 30) {
-            // 观测: 前 60 条记录谁在动
-            observeCount++;
-            if (observeCount <= 60) {
-                Log("obs[%lu]: %.0fx%.0f pos=(%.0f,%.0f) frame=(%.0f,%.0f)\n",
-                    (unsigned long)observeCount, w, h,
-                    pos.x, pos.y,
-                    self.frame.origin.x, self.frame.origin.y);
-            }
-            // 转屏幕坐标: pos 是父坐标系, 向上转换到 root layer
+        CGRect screen = UIScreen.mainScreen.bounds;
+        // 硬性排除全屏宿主: >=90% 屏幕尺寸绝对不碰 (修复 v3.4.11 黑框)
+        if (w >= screen.size.width * 0.9 || h >= screen.size.height * 0.9) {
+            ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
+            return;
+        }
+        // 只夹中型层 (小窗内容层 100~420)
+        if (HasSthenoAncestor(self, 0) && w >= 100 && w <= 420 && h >= 100 && h <= 420) {
             CALayer *root = self;
             while (root.superlayer) root = root.superlayer;
             CGPoint screenPos = pos;
-            if (self.superlayer) {
-                screenPos = [self.superlayer convertPoint:pos toLayer:root];
-            }
-            CGRect screen = UIScreen.mainScreen.bounds;
+            if (self.superlayer) screenPos = [self.superlayer convertPoint:pos toLayer:root];
             CGFloat halfW = w / 2.0, halfH = h / 2.0;
-            CGFloat minX = SideInset + halfW;
-            CGFloat maxX = screen.size.width - SideInset - halfW;
-            CGFloat minY = TopInset + halfH;
-            CGFloat maxY = screen.size.height - BottomInset - halfH;
+            CGFloat minX = halfW, maxX = screen.size.width - halfW;
+            CGFloat minY = 47.0 + halfH, maxY = screen.size.height - 34.0 - halfH;
             CGFloat nx = MIN(MAX(screenPos.x, minX), maxX);
             CGFloat ny = MIN(MAX(screenPos.y, minY), maxY);
             if (nx != screenPos.x || ny != screenPos.y) {
-                // 转回父坐标系
                 CGPoint fixedParent = screenPos;
-                if (self.superlayer) {
-                    fixedParent = [self.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
-                } else {
-                    fixedParent = CGPointMake(nx, ny);
-                }
+                if (self.superlayer) fixedParent = [self.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
+                else fixedParent = CGPointMake(nx, ny);
                 clampCount++;
-                if (clampCount <= 60 || clampCount % 10 == 0) {
-                    Log("CLAMP[%lu]: %.0fx%.0f screenPos=(%.0f,%.0f) -> (%.0f,%.0f) [screen %.0fx%.0f]\n",
+                if (clampCount <= 40 || clampCount % 10 == 0) {
+                    Log("CLAMP[%lu]: %.0fx%.0f screenPos=(%.0f,%.0f) -> (%.0f,%.0f)\n",
                         (unsigned long)clampCount, w, h,
-                        screenPos.x, screenPos.y, nx, ny,
-                        screen.size.width, screen.size.height);
+                        screenPos.x, screenPos.y, nx, ny);
                 }
                 newPos = fixedParent;
             }
@@ -96,11 +82,59 @@ static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
     ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, newPos);
 }
 
+// ---- offsetFilter 观测 (挂起模式边界入口) ----
+typedef struct { double a, b; } Ret16;
+static Ret16 (*OrigOffsetFilter)(id, SEL);
+static NSUInteger offsetCalls;
+static BOOL typeLogged;
+
+static Ret16 HookOffsetFilter(id self, SEL _cmd) {
+    if (!typeLogged) {
+        Method m = class_getInstanceMethod(object_getClass(self), _cmd);
+        if (m) {
+            char *t = method_copyReturnType(m);
+            Log("offsetFilter return type encoding: %s\n", t ? t : "?");
+            if (t) free(t);
+        }
+        typeLogged = YES;
+    }
+    Ret16 r = OrigOffsetFilter(self, _cmd);
+    offsetCalls++;
+    if (offsetCalls <= 50 || offsetCalls % 20 == 0) {
+        Log("offsetFilter[%lu]: x=%.1f y=%.1f\n", (unsigned long)offsetCalls, r.a, r.b);
+    }
+    return r;
+}
+
+static void TryHookOffsetFilter(void) {
+    static int attempt = 0;
+    const char *names[] = {"_TtC6Stheno14ReflectManager", "Stheno.ReflectManager", NULL};
+    for (int i = 0; names[i]; i++) {
+        Class cls = NSClassFromString([NSString stringWithUTF8String:names[i]]);
+        if (!cls) continue;
+        SEL sel = NSSelectorFromString(@"offsetFilter");
+        if (sel && [cls instancesRespondToSelector:sel]) {
+            if (OrigOffsetFilter == NULL) {
+                MSHookMessageEx(cls, sel, (IMP)HookOffsetFilter, (IMP *)&OrigOffsetFilter);
+                Log("HOOKED offsetFilter (attempt %d)\n", attempt);
+            }
+            return;
+        }
+    }
+    attempt++;
+    if (attempt < 20) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ TryHookOffsetFilter(); });
+    }
+}
+
 __attribute__((constructor)) static void Start(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         Class layerCls = CALayer.class;
         MSHookMessageEx(layerCls, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
     });
-    Log("SthenoBounds v3.4.11 loaded (screen-coord clamp, all sizes)\n");
+    Log("SthenoBounds v3.4.12 loaded (fix black frame + offsetFilter observe)\n");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ TryHookOffsetFilter(); });
 }
