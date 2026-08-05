@@ -83,8 +83,14 @@ static void SnapIn(UIView *v, int depth) {
 }
 static void SnapBackAll(void) {
     @try {
-        NSArray *windows = [UIApplication sharedApplication].windows;
-        for (UIWindow *w in windows) {
+        // iOS 15+: UIApplication.windows deprecated, 用 UIWindowScene.windows
+        NSMutableArray *allWindows = [NSMutableArray array];
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                [allWindows addObjectsFromArray:[(UIWindowScene *)scene windows]];
+            }
+        }
+        for (UIWindow *w in allWindows) {
             SnapIn(w, 0);
         }
         Log("snap pass done (total=%lu)\n", (unsigned long)snapCount);
