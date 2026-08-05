@@ -6,11 +6,13 @@ export THEOS_PACKAGE_SCHEME = roothide
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = SthenoBounds
-SthenoBounds_FILES = Tweak.xm
-SthenoBounds_CFLAGS = -fobjc-arc
-SthenoBounds_FRAMEWORKS = UIKit Foundation
-SthenoBounds_LIBRARIES = substrate roothide
-SthenoBounds_CODESIGN_FLAGS = -SSthenoBounds.entitlements
+# ElleKit injects alphabetically. Load before Stheno.dylib so the Swift
+# allocator hook sees ReflectManager's initial singleton allocation.
+TWEAK_NAME = 000SthenoBounds
+000SthenoBounds_FILES = Tweak.xm
+000SthenoBounds_CFLAGS = -fobjc-arc
+000SthenoBounds_FRAMEWORKS = UIKit Foundation
+000SthenoBounds_LIBRARIES = substrate roothide
+000SthenoBounds_CODESIGN_FLAGS = -SSthenoBounds.entitlements
 
 include $(THEOS_MAKE_PATH)/tweak.mk

@@ -3,6 +3,7 @@
 #import <substrate.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
+extern void MSHookFunction(void *symbol, void *replace, void **result);
 
 // Stheno uses a Swift-only ReflectManager. Its arm64e field metadata shows:
 // field 16 = finalFrame, 18 = finalOffset, 19 = finalCardFrame.
@@ -18,7 +19,15 @@ static const CGFloat Edge = 12.0;
 
 static void *HookSwiftAlloc(void *metadata, size_t size, size_t alignmentMask) {
     void *object = OrigSwiftAlloc(metadata, size, alignmentMask);
-    if (object && metadata == ReflectMetadata) ReflectInstance = (__bridge id)object;
+    // The allocator hook is installed before Stheno loads. Resolve the class
+    // lazily here, so its startup allocation cannot be missed by a delayed
+    // NSClassFromString polling pass.
+    if (!ReflectMetadata) {
+        Class cls = NSClassFromString(@"Stheno.ReflectManager");
+        if (cls) ReflectMetadata = (__bridge void *)cls;
+    }
+    if (object && ReflectMetadata && metadata == ReflectMetadata)
+        ReflectInstance = (__bridge id)object;
     return object;
 }
 static CGRect ClampRect(CGRect f) {
@@ -35,14 +44,14 @@ static CGRect ClampRect(CGRect f) {
 static BOOL ValidOffset(uint32_t x) { return x >= 16 && x <= 0x1000 && !(x & 7); }
 static void Prepare(id object) {
     if (offsetsReady || !object) return;
-    // Swift class descriptor proved by analysis: field-offset vector word is #10.
-    uintptr_t metadata = (uintptr_t)object_getClass(object);
-    uint32_t vectorWord = *(uint32_t *)(metadata + 10 * sizeof(uintptr_t));
-    if (vectorWord < 4 || vectorWord > 128) return;
-    uint32_t *offsets = (uint32_t *)(metadata + (uintptr_t)vectorWord * sizeof(uintptr_t));
-    uint32_t a = offsets[16], b = offsets[19];
-    if (!ValidOffset(a) || !ValidOffset(b)) return;
-    finalFrameOffset = a; finalCardFrameOffset = b; offsetsReady = YES;
+    // object_getClass(object) is the metaclass; [object class] is the
+    // Swift instance metadata. ReflectManager's descriptor fixes its field
+    // offset vector at word #10, using pointer-sized entries on arm64e.
+    uintptr_t metadata = (uintptr_t)[object class];
+    const uintptr_t *offsets = (const uintptr_t *)(metadata + 10 * sizeof(uintptr_t));
+    uintptr_t a = offsets[16], b = offsets[19];
+    if (a > UINT32_MAX || b > UINT32_MAX || !ValidOffset((uint32_t)a) || !ValidOffset((uint32_t)b)) return;
+    finalFrameOffset = (uint32_t)a; finalCardFrameOffset = (uint32_t)b; offsetsReady = YES;
 }
 @interface SthenoSwiftStateGuard : NSObject @end
 @implementation SthenoSwiftStateGuard
@@ -60,8 +69,8 @@ static void Prepare(id object) {
 @end
 static void Install(void) {
     static BOOL installed = NO; if (installed) return;
-    Class c = NSClassFromString(@"Stheno.ReflectManager"); if (!c) return;
-    ReflectMetadata = (__bridge void *)c;
+    // Do not wait for ReflectManager to be registered: Stheno itself may
+    // allocate it immediately after this dylib loads.
     void *swiftAlloc = dlsym(RTLD_DEFAULT, "swift_allocObject");
     if (!swiftAlloc) return;
     MSHookFunction(swiftAlloc, (void *)HookSwiftAlloc, (void **)&OrigSwiftAlloc);
@@ -71,4 +80,12 @@ static void Install(void) {
     [stateGuardLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     installed = YES;
 }
-%ctor { dispatch_async(dispatch_get_main_queue(), ^{ for (NSUInteger i=1;i<=40;i++) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(), ^{ Install(); }); }); }
+__attribute__((constructor)) static void SthenoBoundsStart(void) {
+    // This dylib is named 000SthenoBounds so ElleKit loads it before Stheno.
+    // Install immediately: ReflectManager is allocated during Stheno startup.
+    Install();
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (NSUInteger i=1;i<=40;i++)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(), ^{ Install(); });
+    });
+}
