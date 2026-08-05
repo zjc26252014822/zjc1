@@ -2,44 +2,22 @@
 #import <Foundation/Foundation.h>
 #import <substrate.h>
 
-static BOOL reported = NO;
-static IMP OrigInitFrame, OrigInitScene;
-
-static UIViewController *Top(UIViewController *vc) {
-    while (vc.presentedViewController) vc = vc.presentedViewController;
-    return vc;
+static IMP OrigHidden, OrigFrame;
+static BOOL shown = NO;
+static void Toast(UIWindow *w, NSString *event) {
+    if (shown || !w) return; shown=YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CGRect f=w.frame; CGAffineTransform t=w.transform;
+        NSString *s=[NSString stringWithFormat:@"Stheno captured via %@\nf=(%.0f,%.0f %.0fx%.0f)\ntx=%.1f ty=%.1f\nchildren=%lu",event,f.origin.x,f.origin.y,f.size.width,f.size.height,t.tx,t.ty,(unsigned long)w.subviews.count];
+        UILabel *l=[[UILabel alloc]initWithFrame:CGRectMake(35,115,360,105)]; l.numberOfLines=0; l.text=s; l.textAlignment=NSTextAlignmentCenter; l.font=[UIFont systemFontOfSize:14]; l.textColor=UIColor.whiteColor; l.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:.82]; l.layer.cornerRadius=12; l.layer.masksToBounds=YES; [w addSubview:l];
+        [UIView animateWithDuration:.25 delay:4 options:0 animations:^{l.alpha=0;} completion:^(__unused BOOL done){[l removeFromSuperview];}];
+    });
 }
-static void Report(UIWindow *window) {
-    if (reported || !window) return;
-    reported = YES;
-    NSMutableString *text = [NSMutableString string];
-    CGRect f = window.frame; CGAffineTransform t = window.transform;
-    [text appendFormat:@"Window\nf=(%.0f,%.0f %.0fx%.0f)\nt=(%.2f %.2f %.2f %.2f %.1f %.1f)\n\nDirect subviews (%lu):\n",f.origin.x,f.origin.y,f.size.width,f.size.height,t.a,t.b,t.c,t.d,t.tx,t.ty,(unsigned long)window.subviews.count];
-    NSUInteger limit = MIN(window.subviews.count, (NSUInteger)8);
-    for (NSUInteger i=0; i<limit; i++) {
-        UIView *v = window.subviews[i]; CGRect x=v.frame; CGAffineTransform a=v.transform;
-        [text appendFormat:@"%lu %@\nf=(%.0f,%.0f %.0fx%.0f)\nt=(%.2f %.2f %.2f %.2f %.1f %.1f)\n",(unsigned long)i,NSStringFromClass(v.class),x.origin.x,x.origin.y,x.size.width,x.size.height,a.a,a.b,a.c,a.d,a.tx,a.ty];
-    }
-    UIViewController *root = window.rootViewController; if (!root) return;
-    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Stheno target only" message:text preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    [Top(root) presentViewController:alert animated:YES completion:nil];
-}
-static id InitFrame(UIWindow *self, SEL cmd, CGRect frame) {
-    self=((id(*)(id,SEL,CGRect))OrigInitFrame)(self,cmd,frame);
-    if (self) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/2),dispatch_get_main_queue(),^{ Report(self); });
-    return self;
-}
-static id InitScene(UIWindow *self, SEL cmd, id scene) {
-    self=((id(*)(id,SEL,id))OrigInitScene)(self,cmd,scene);
-    if (self) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/2),dispatch_get_main_queue(),^{ Report(self); });
-    return self;
-}
+static void SetHidden(UIWindow *w, SEL cmd, BOOL hidden) { ((void(*)(id,SEL,BOOL))OrigHidden)(w,cmd,hidden); if(!hidden) Toast(w,@"setHidden:NO"); }
+static void SetFrame(UIWindow *w, SEL cmd, CGRect frame) { ((void(*)(id,SEL,CGRect))OrigFrame)(w,cmd,frame); Toast(w,@"setFrame:"); }
 static void Install(void) {
-    static Class c; if (c) return;
-    c=NSClassFromString(@"Stheno.SthenoWindow"); if (!c) return;
-    MSHookMessageEx(c,@selector(initWithFrame:),(IMP)InitFrame,&OrigInitFrame);
-    SEL s=NSSelectorFromString(@"initWithWindowScene:");
-    if ([c instancesRespondToSelector:s]) MSHookMessageEx(c,s,(IMP)InitScene,&OrigInitScene);
+    static Class c; if(c)return; c=NSClassFromString(@"Stheno.SthenoWindow"); if(!c)return;
+    MSHookMessageEx(c,@selector(setHidden:),(IMP)SetHidden,&OrigHidden);
+    MSHookMessageEx(c,@selector(setFrame:),(IMP)SetFrame,&OrigFrame);
 }
-%ctor { dispatch_async(dispatch_get_main_queue(),^{ for(NSUInteger i=1;i<=30;i++) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(),^{Install();}); }); }
+%ctor { dispatch_async(dispatch_get_main_queue(),^{for(NSUInteger i=1;i<=40;i++)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,i*NSEC_PER_SEC/2),dispatch_get_main_queue(),^{Install();});}); }
