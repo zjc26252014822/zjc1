@@ -10,13 +10,13 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno v3.4.13 - 位置出屏才夹 + 完整观测
-// 问题: v3.4.12 夹 303x303 但小窗照样拖出 -> 303x303 不是视觉主体
-//       v3.4.8 观测到 344x746 被拖出屏, 但 v3.4.10-12 没夹到它
-//       (setPosition 时 bounds 可能为 0, 尺寸判断失效)
-// 方案: 1) 不依赖尺寸判断, 用"位置出屏"判断 (屏幕坐标超出边界即夹)
-//       2) 排除全屏层(>=90%屏) 和 极小层(<30)
-//       3) 记录所有 Stheno 祖先层 setPosition (前100条), 确认谁是视觉主体
+// Stheno v3.4.14 - 松手回弹方案 (关键转折)
+// 证据: v3.4.13 实时夹 position 无效 - SwiftUI 每帧重写 position (CLAMP 反复出现同值 sp=455)
+//       = 数据驱动渲染覆盖我们的修改
+// 方案: 放弃实时夹, 改为 UIPanGestureRecognizer 手势结束(Ended)后延迟 0.25s,
+//       扫描所有 Stheno 层, 把出屏的小窗 (MTMaterialLayer 303x303 / 内容层) 拉回屏幕内贴边
+//       手势结束后 SwiftUI 不再写入 -> 一次生效不可覆盖
+// 小窗本体: MTMaterialLayer (303x303 毛玻璃) + CALayer (303x303 bounds, transform 内容层)
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -28,9 +28,9 @@ static void Log(const char *fmt, ...) {
     close(fd);
 }
 
-static IMP OrigSetPosition;
-static NSUInteger clampCount, obsCount;
 static const CGFloat TopInset = 47.0, BottomInset = 34.0;
+static NSUInteger snapCount;
+static BOOL snapPending;
 
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     if (!layer || depth > 10) return NO;
@@ -41,41 +41,22 @@ static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     }
     const char *ln = class_getName(object_getClass(layer));
     if (ln && (strstr(ln, "PlatformViewHost") || strstr(ln, "UIHostingView") ||
-               strstr(ln, "Stheno") || strstr(ln, "Reflect")))
+               strstr(ln, "Stheno") || strstr(ln, "Reflect") || strstr(ln, "Material")))
         return YES;
     return HasSthenoAncestor(layer.superlayer, depth + 1);
 }
 
-static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
-    CGPoint newPos = pos;
+// 把一个层的屏幕位置拉回屏幕内 (贴边)
+static void SnapLayerIn(CALayer *layer, CGRect screen) {
     @try {
-        if (!HasSthenoAncestor(self, 0)) {
-            ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
-            return;
-        }
-        CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-        CGRect screen = UIScreen.mainScreen.bounds;
-        // 排除全屏层 (>=90% 屏) 和极小层 (<30)
-        if (w >= screen.size.width * 0.9 || h >= screen.size.height * 0.9 || w < 30 || h < 30) {
-            ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
-            return;
-        }
-        // 观测: 记录前 100 条 (含尺寸/位置/是否出屏)
-        obsCount++;
-        if (obsCount <= 100) {
-            Log("obs[%lu]: %.0fx%.0f pos=(%.0f,%.0f) frame=(%.0f,%.0f %.0fx%.0f) cls=%s\n",
-                (unsigned long)obsCount, w, h,
-                pos.x, pos.y,
-                self.frame.origin.x, self.frame.origin.y,
-                self.frame.size.width, self.frame.size.height,
-                class_getName(object_getClass(self)));
-        }
-        // 屏幕坐标 (转 root; 失败则用 pos)
-        CALayer *root = self;
+        CGFloat w = layer.bounds.size.width, h = layer.bounds.size.height;
+        // 只处理中型层 (小窗 30~420), 排除全屏层和小图标
+        if (w < 30 || h < 30) return;
+        if (w >= screen.size.width * 0.9 || h >= screen.size.height * 0.9) return;
+        CALayer *root = layer;
         while (root.superlayer) root = root.superlayer;
-        CGPoint sp = pos;
-        if (self.superlayer) sp = [self.superlayer convertPoint:pos toLayer:root];
-        // 位置出屏才夹: 中心点超出 [half, screen-half] 范围
+        CGPoint sp = layer.position;
+        if (layer.superlayer) sp = [layer.superlayer convertPoint:layer.position toLayer:root];
         CGFloat hw = w / 2.0, hh = h / 2.0;
         CGFloat minX = hw, maxX = screen.size.width - hw;
         CGFloat minY = TopInset + hh, maxY = screen.size.height - BottomInset - hh;
@@ -83,26 +64,69 @@ static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
         CGFloat ny = MIN(MAX(sp.y, minY), maxY);
         if (nx != sp.x || ny != sp.y) {
             CGPoint fixed = sp;
-            if (self.superlayer) fixed = [self.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
+            if (layer.superlayer) fixed = [layer.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
             else fixed = CGPointMake(nx, ny);
-            clampCount++;
-            if (clampCount <= 60 || clampCount % 10 == 0) {
-                Log("CLAMP[%lu]: %.0fx%.0f sp=(%.0f,%.0f) -> (%.0f,%.0f)\n",
-                    (unsigned long)clampCount, w, h, sp.x, sp.y, nx, ny);
+            // 禁动画直接设置, 防止被隐式动画干扰
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            layer.position = fixed;
+            [CATransaction commit];
+            snapCount++;
+            if (snapCount <= 40 || snapCount % 10 == 0) {
+                Log("SNAP[%lu]: %.0fx%.0f sp=(%.0f,%.0f) -> (%.0f,%.0f) cls=%s\n",
+                    (unsigned long)snapCount, w, h, sp.x, sp.y, nx, ny,
+                    class_getName(object_getClass(layer)));
             }
-            newPos = fixed;
         }
     } @catch (NSException *e) {
-        Log("clamp exception: %@\n", e.name);
+        Log("snap exception: %@\n", e.name);
     }
-    ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, newPos);
+}
+
+static void ScanLayerTree(CALayer *layer, int depth, CGRect screen) {
+    if (!layer || depth > 12) return;
+    SnapLayerIn(layer, screen);
+    for (CALayer *sub in layer.sublayers) {
+        ScanLayerTree(sub, depth + 1, screen);
+    }
+}
+
+static void DoSnapBack(void) {
+    snapPending = NO;
+    @try {
+        CGRect screen = UIScreen.mainScreen.bounds;
+        // iOS 15+: UIWindowScene.windows
+        NSMutableArray *allWindows = [NSMutableArray array];
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+            [allWindows addObjectsFromArray:((UIWindowScene *)scene).windows];
+        }
+        for (UIWindow *w in allWindows) {
+            ScanLayerTree(w.layer, 0, screen);
+        }
+        Log("snap pass done\n");
+    } @catch (NSException *e) {
+        Log("snap pass exception: %@\n", e.name);
+    }
+}
+
+static IMP OrigSetState;
+static void HookSetState(UIGestureRecognizer *self, SEL _cmd, UIGestureRecognizerState state) {
+    ((void(*)(id,SEL,NSInteger))OrigSetState)(self, _cmd, state);
+    @try {
+        if (state == UIGestureRecognizerStateEnded && !snapPending) {
+            snapPending = YES;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ DoSnapBack(); });
+        }
+    } @catch (NSException *e) {}
 }
 
 __attribute__((constructor)) static void Start(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        Class layerCls = CALayer.class;
-        MSHookMessageEx(layerCls, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
+        Class gr = UIGestureRecognizer.class;
+        MSHookMessageEx(gr, @selector(setState:), (IMP)HookSetState, &OrigSetState);
     });
-    Log("SthenoBounds v3.4.13 loaded (position-out-of-screen clamp + full observe)\n");
+    Log("SthenoBounds v3.4.14 loaded (snap-back on gesture end)\n");
 }

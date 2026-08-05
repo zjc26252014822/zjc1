@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.13
+Version: 3.4.14
 Architecture: iphoneos-arm64e
-Description: Stheno v3.4.13：位置出屏才夹（不依赖尺寸判断，修复bounds=0漏夹344x746）+ 完整观测记录所有Stheno层setPosition。
+Description: Stheno v3.4.14：松手回弹——手势结束0.25s后扫描CALayer树，把出屏的小窗(MTMaterialLayer 303x303)拉回屏幕内贴边。修复实时夹被SwiftUI每帧覆盖的问题。
 Maintainer: Local
 Author: Local
 Section: Tweaks
