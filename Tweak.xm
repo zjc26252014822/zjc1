@@ -58,22 +58,28 @@ static CGRect ClampedFrame(UIView *self, CGRect frame) {
         !isfinite(sf.size.width) || !isfinite(sf.size.height)) return frame;
     if (sf.size.width < 1 || sf.size.height < 1) return frame;
 
+    // 关键: 接近全屏的 view (>= 屏幕 85%) 直接放行!
+    // PlatformViewHost 这种 SwiftUI 宿主容器 frame=430x932=全屏, 不是小窗,
+    // 夹紧它会把整个主界面推下移 (v3.4.0 实测 bug)
+    if (sf.size.width >= screen.size.width * 0.85 &&
+        sf.size.height >= screen.size.height * 0.85)
+        return frame;
+
     CGRect fixed = sf;
     // X: 保证至少 MinVisible 在屏幕内
     if (fixed.origin.x > screen.size.width - MinVisible)
         fixed.origin.x = screen.size.width - MinVisible;
     if (fixed.origin.x + fixed.size.width < MinVisible)
         fixed.origin.x = MinVisible - fixed.size.width;
-    // Y: 顶部留状态栏空间, 底部留 home indicator
+    if (fixed.origin.x < -fixed.size.width + MinVisible)
+        fixed.origin.x = -fixed.size.width + MinVisible;
+    // Y: 顶部避开状态栏, 底部留 home indicator
     if (fixed.origin.y < 47)
         fixed.origin.y = 47;
     if (fixed.origin.y > screen.size.height - 47 - MinVisible)
         fixed.origin.y = screen.size.height - 47 - MinVisible;
     if (fixed.origin.y + fixed.size.height < 47 + MinVisible)
         fixed.origin.y = 47 + MinVisible - fixed.size.height;
-    // 屏幕坐标下界也夹一下 (避免拖到 -x)
-    if (fixed.origin.x < -fixed.size.width + MinVisible)
-        fixed.origin.x = -fixed.size.width + MinVisible;
 
     if (fixed.origin.x == sf.origin.x && fixed.origin.y == sf.origin.y)
         return frame;  // 无需修正
