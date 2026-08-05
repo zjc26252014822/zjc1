@@ -10,9 +10,10 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno 观测版 v3.4.7 - hook CALayer 层 (SwiftUI offset 最终落地为 layer position/transform)
-// 发现: ReflectView/MaterialView 303x303 = 小窗本体, 但 UIView setFrame/setBounds 抓不到移动
-//       (SwiftUI 渲染在 CALayer 层). 这是所有渲染必经之路.
+// Stheno 观测版 v3.4.8 - hook CALayer setPosition 记录所有移动明显的 layer
+// 发现: SwiftUI 内部渲染 layer 无 delegate, 之前的过滤漏掉了真正移动的层
+//       (no-delegate layer pos 到了 645,1398 屏幕外!)
+// 新策略: 记录所有 position 变化 > 1pt 的 layer, 向上追溯 superlayer 链找 Stheno 祖先
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -24,79 +25,57 @@ static void Log(const char *fmt, ...) {
     close(fd);
 }
 
-static IMP OrigSetPosition, OrigSetTransform, OrigSetBounds;
-static NSUInteger posCalls, tfCalls, bndCalls;
-static NSUInteger sthenoPosCalls;
+static IMP OrigSetPosition;
+static NSUInteger movedCount, sthenoAncestorCount;
+static NSMutableDictionary *lastPosByKey;   // key: 类名 -> last pos
 
-// layer 的 delegate 是否为 Stheno/Reflect 相关 view
-static BOOL IsSthenoLayer(CALayer *layer) {
+// 向上追溯 superlayer 链, 找最近的 Stheno 相关祖先 (delegate 或类名)
+static const char *FindSthenoAncestor(CALayer *layer, int depth) {
+    if (!layer || depth > 8) return NULL;
     id d = layer.delegate;
-    if (!d) return NO;
-    const char *n = class_getName(object_getClass(d));
-    if (!n) return NO;
-    return strstr(n, "Stheno") || strstr(n, "Reflect") || strstr(n, "Material") ||
-           strstr(n, "PlatformViewHost") || strstr(n, "Container");
+    if (d) {
+        const char *n = class_getName(object_getClass(d));
+        if (n && (strstr(n, "Stheno") || strstr(n, "Reflect"))) return n;
+    }
+    const char *ln = class_getName(object_getClass(layer));
+    if (ln && (strstr(ln, "PlatformViewHost") || strstr(ln, "UIHostingView") ||
+               strstr(ln, "Stheno") || strstr(ln, "Reflect")))
+        return ln;
+    return FindSthenoAncestor(layer.superlayer, depth + 1);
 }
 
 static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
-    BOOL stheno = IsSthenoLayer(self);
-    if (stheno) {
-        sthenoPosCalls++;
-        if (sthenoPosCalls <= 40 || sthenoPosCalls % 20 == 0) {
-            Log("layerPos[%lu]: %s pos=(%.0f,%.0f) frame=(%.0f,%.0f %.0fx%.0f)\n",
-                (unsigned long)sthenoPosCalls,
-                class_getName(object_getClass(self.delegate)),
+    // 记录移动明显的 layer (与上次 position 比较)
+    static NSMutableDictionary *lastMap;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lastMap = [NSMutableDictionary dictionary]; });
+    const char *cls = class_getName(object_getClass(self));
+    const char *ancestor = FindSthenoAncestor(self, 0);
+    NSString *key = [NSString stringWithFormat:@"%s|%s", cls, ancestor ? ancestor : "-"];
+    NSValue *lastVal = lastMap[key];
+    BOOL moved = NO;
+    if (lastVal) {
+        CGPoint last = lastVal.CGPointValue;
+        moved = (fabs(pos.x - last.x) > 1.0 || fabs(pos.y - last.y) > 1.0);
+    }
+    lastMap[key] = [NSValue valueWithCGPoint:pos];
+    if (moved) {
+        movedCount++;
+        BOOL stheno = (ancestor != NULL);
+        if (stheno) sthenoAncestorCount++;
+        // 节流: Stheno 相关的全记, 其他的只记前 30 个
+        if (stheno || movedCount <= 30) {
+            id d = self.delegate;
+            Log("moved[%lu]: %s pos=(%.0f,%.0f) frame=(%.0f,%.0f %.0fx%.0f) ancestor=%s delegate=%s\n",
+                (unsigned long)movedCount, cls,
                 pos.x, pos.y,
                 self.frame.origin.x, self.frame.origin.y,
-                self.frame.size.width, self.frame.size.height);
-        }
-    } else {
-        posCalls++;
-        if (posCalls <= 5) {
-            Log("layerPos[%lu]: generic %s pos=(%.0f,%.0f)\n",
-                (unsigned long)posCalls,
-                self.delegate ? class_getName(object_getClass(self.delegate)) : "no-delegate",
-                pos.x, pos.y);
+                self.frame.size.width, self.frame.size.height,
+                ancestor ? ancestor : "-",
+                d ? class_getName(object_getClass(d)) : "none");
         }
     }
     ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
-}
-
-static void HookSetTransform(CALayer *self, SEL _cmd, CATransform3D t) {
-    BOOL stheno = IsSthenoLayer(self);
-    BOOL nonIdentity = !CATransform3DIsIdentity(t);
-    if (stheno && nonIdentity) {
-        tfCalls++;
-        if (tfCalls <= 40) {
-            Log("layerTf[%lu]: %s tx=%.1f ty=%.1f\n",
-                (unsigned long)tfCalls,
-                class_getName(object_getClass(self.delegate)),
-                t.m41, t.m42);
-        }
-    } else if (stheno) {
-        tfCalls++;
-        if (tfCalls <= 10) {
-            Log("layerTf[%lu]: %s identity\n",
-                (unsigned long)tfCalls,
-                class_getName(object_getClass(self.delegate)));
-        }
-    }
-    ((void(*)(id,SEL,CATransform3D))OrigSetTransform)(self, _cmd, t);
-}
-
-static void HookSetBounds(CALayer *self, SEL _cmd, CGRect bounds) {
-    BOOL stheno = IsSthenoLayer(self);
-    if (stheno) {
-        bndCalls++;
-        if (bndCalls <= 30 || bndCalls % 20 == 0) {
-            Log("layerBnd[%lu]: %s origin=(%.0f,%.0f) size=(%.0fx%.0f)\n",
-                (unsigned long)bndCalls,
-                class_getName(object_getClass(self.delegate)),
-                bounds.origin.x, bounds.origin.y,
-                bounds.size.width, bounds.size.height);
-        }
-    }
-    ((void(*)(id,SEL,CGRect))OrigSetBounds)(self, _cmd, bounds);
 }
 
 __attribute__((constructor)) static void Start(void) {
@@ -104,8 +83,6 @@ __attribute__((constructor)) static void Start(void) {
     dispatch_once(&once, ^{
         Class layerCls = CALayer.class;
         MSHookMessageEx(layerCls, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
-        MSHookMessageEx(layerCls, @selector(setTransform:), (IMP)HookSetTransform, &OrigSetTransform);
-        MSHookMessageEx(layerCls, @selector(setBounds:), (IMP)HookSetBounds, &OrigSetBounds);
     });
-    Log("SthenoBounds v3.4.7 loaded (CALayer observe)\n");
+    Log("SthenoBounds v3.4.8 loaded (track moved layers, find Stheno ancestor)\n");
 }

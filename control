@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.7
+Version: 3.4.8
 Architecture: iphoneos-arm64e
-Description: Stheno 观测版 v3.4.7：hook CALayer setPosition/setTransform/setBounds（SwiftUI offset 最终落地层），记录 Stheno 小窗真实移动。
+Description: Stheno 观测版 v3.4.8：记录所有移动明显的 CALayer（含无delegate的SwiftUI内部层），追溯superlayer链找Stheno祖先，定位小窗真实渲染层。
 Maintainer: Local
 Author: Local
 Section: Tweaks
