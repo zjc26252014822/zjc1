@@ -13,6 +13,7 @@
 #include <unistd.h>
 extern void MSHookFunction(void *,void *,void **);
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
+extern id objc_retain(id obj);   // ARC 内部函数, 显式声明供强持有
 
 // 边界修复 v3.3.0 - 崩溃安全版 (修复 v3.2.0 use-after-free)
 // 策略:
@@ -44,11 +45,12 @@ static IMP OrigPanSetState;
 static BOOL MemoryReadable(uintptr_t addr) {
     vm_address_t a = (vm_address_t)addr;
     vm_size_t size = 0;
+    mach_port_t objName = MACH_PORT_NULL;
     vm_region_basic_info_data_64_t info;
     mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64;
     kern_return_t kr = vm_region_64(mach_task_self(), &a, &size,
                                     VM_REGION_BASIC_INFO_64,
-                                    (vm_region_info_t)&info, &cnt);
+                                    (vm_region_info_t)&info, &cnt, &objName);
     if (kr != KERN_SUCCESS) return NO;
     return (info.protection & VM_PROT_READ) != 0;
 }
@@ -80,10 +82,12 @@ static void *HookInit(void*a,void*b){
             }
         } else {
             rejectedNonReflect++;
-            if (rejectedNonReflect <= 5)
-                Log("reject: %p class=%s\n", o,
-                    (MemoryReadable((uintptr_t)object_getClass(o)) ?
-                     (class_getName(object_getClass(o)) ?: "?") : "?"));
+            if (rejectedNonReflect <= 5) {
+                id rejectedObj = (__bridge id)o;
+                const char *rname = (MemoryReadable((uintptr_t)object_getClass(rejectedObj)) ?
+                                     (class_getName(object_getClass(rejectedObj)) ?: "?") : "?");
+                Log("reject: %p class=%s\n", o, rname);
+            }
         }
     }
     return o;
