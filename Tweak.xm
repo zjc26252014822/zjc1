@@ -30,7 +30,7 @@ static const CGFloat TopInset = 47.0, BottomInset = 34.0;
 static NSUInteger snapCount;
 static NSHashTable *movedSet;
 static BOOL dragging;
-static CADisplayLink *link;
+static CADisplayLink *dlLink;
 static id linkTarget;
 
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
@@ -152,8 +152,8 @@ __attribute__((constructor)) static void Start(void) {
         Class lc = CALayer.class;
         MSHookMessageEx(lc, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
         linkTarget = [[SBLinkTarget alloc] init];
-        link = [CADisplayLink displayLinkWithTarget:linkTarget selector:@selector(tick)];
-        [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+        dlLink = [CADisplayLink displayLinkWithTarget:linkTarget selector:@selector(tick)];
+        [dlLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     });
     Log("SthenoBounds v3.4.20 loaded (CADisplayLink persistent clamp)\n");
 }
