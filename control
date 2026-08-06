@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Transform Trace
-Version: 3.5.1
+Version: 3.5.2
 Architecture: iphoneos-arm64e
-Description: Card host transform trace for Stheno bounds repair.
+Description: De-duplicated card layer transform trace for Stheno bounds repair.
 Maintainer: Local
 Author: Local
 Section: Tweaks
