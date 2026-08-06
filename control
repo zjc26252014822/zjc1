@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Card Bounds Diagnostic
-Version: 3.2.1
+Name: Stheno Layer Trace
+Version: 3.5.0
 Architecture: iphoneos-arm64e
-Description: Active Stheno card offset boundary diagnostic.
+Description: Targeted outer-layer trace for Stheno card bounds repair.
 Maintainer: Local
 Author: Local
 Section: Tweaks
