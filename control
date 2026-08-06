@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.19
+Version: 3.4.20
 Architecture: iphoneos-arm64e
-Description: Stheno v3.4.19：持续夹2秒对抗SwiftUI每帧写回（每0.15s夹一次），拉回时检查祖先链（视觉主体可能是父层）。
+Description: Stheno v3.4.20：CADisplayLink常驻每帧夹——松手后永不超时，每帧把出屏的Stheno层拉回屏幕内（对抗SwiftUI状态写回），拖动时暂停。
 Maintainer: Local
 Author: Local
 Section: Tweaks

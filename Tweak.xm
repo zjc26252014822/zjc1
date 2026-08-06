@@ -10,11 +10,11 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno v3.4.19 - 持续夹 2 秒对抗 SwiftUI 写回
-// v3.4.18 证据: tx=0 ty=0 (无 transform), SNAP 拉回后 SwiftUI 又写回 -> fixed=0
-// 真相: SwiftUI 数据驱动渲染, layer position 是渲染结果, 拉一次会被下一帧覆盖
-// 方案: 松手后 2 秒内每 0.15s 强制夹一次 (对抗每帧写回), 且拉回时检查祖先链
-//       (视觉主体可能是父层, 不只 303x303 子层)
+// Stheno v3.4.20 - CADisplayLink 常驻每帧夹
+// 铁证: v3.4.19 持续夹 2 秒期间每轮都拉回(fixed>0), 停手后 SwiftUI 又写回
+// 真相: Stheno offset 状态就是出屏的, layer 只是渲染结果
+// 方案: CADisplayLink 常驻每帧检查, 只要出屏就拉回, 永不超时
+//       拖动中暂停夹, 松手恢复夹 -> 拖动自由, 松手即钉住
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -30,9 +30,8 @@ static const CGFloat TopInset = 47.0, BottomInset = 34.0;
 static NSUInteger snapCount;
 static NSHashTable *movedSet;
 static BOOL dragging;
-static int clampRounds;      // 已执行的夹紧轮次
-static const int MaxRounds = 14;   // 2.1s / 0.15s
-static BOOL snapActive;
+static CADisplayLink *link;
+static id linkTarget;
 
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     if (!layer || depth > 12) return NO;
@@ -58,7 +57,7 @@ static BOOL IsWindowSize(CALayer *layer, CGRect screen) {
 static IMP OrigSetPosition;
 static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
     @try {
-        if (dragging && HasSthenoAncestor(self, 0)) {
+        if (HasSthenoAncestor(self, 0)) {
             CGRect screen = UIScreen.mainScreen.bounds;
             if (IsWindowSize(self, screen)) {
                 [movedSet addObject:self];
@@ -68,7 +67,6 @@ static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
     ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
 }
 
-// 检查并拉回一个层 (返回是否修正)
 static BOOL FixLayer(CALayer *layer, CGRect screen, NSUInteger *outCount) {
     if (!layer) return NO;
     CGFloat w = layer.bounds.size.width, h = layer.bounds.size.height;
@@ -93,7 +91,7 @@ static BOOL FixLayer(CALayer *layer, CGRect screen, NSUInteger *outCount) {
         [CATransaction commit];
         (*outCount)++;
         snapCount++;
-        if (snapCount <= 40 || snapCount % 10 == 0) {
+        if (snapCount <= 30 || snapCount % 20 == 0) {
             Log("SNAP[%lu]: %.0fx%.0f sp=(%.0f,%.0f) -> (%.0f,%.0f) cls=%s\n",
                 (unsigned long)snapCount, w, h, sp.x, sp.y, nx, ny,
                 class_getName(object_getClass(layer)));
@@ -103,17 +101,15 @@ static BOOL FixLayer(CALayer *layer, CGRect screen, NSUInteger *outCount) {
     return NO;
 }
 
-static void ClampRound(void) {
+static void TickFunc(void) {
+    if (dragging) return;
     @try {
         CGRect screen = UIScreen.mainScreen.bounds;
         NSUInteger fixed = 0;
-        // 复制集合快照 (避免遍历中修改)
         NSArray *snapshot = [movedSet allObjects];
         for (CALayer *layer in snapshot) {
             if (!layer) continue;
-            // 拉回层本身
             FixLayer(layer, screen, &fixed);
-            // 同时检查祖先链 (视觉主体可能是父层)
             CALayer *anc = layer.superlayer;
             int depth = 0;
             while (anc && depth < 6) {
@@ -124,21 +120,16 @@ static void ClampRound(void) {
                 depth++;
             }
         }
-        clampRounds++;
-        Log("clamp round %d/%d done (fixed=%lu)\n", clampRounds, MaxRounds, (unsigned long)fixed);
-        if (clampRounds >= MaxRounds) {
-            snapActive = NO;
-            [movedSet removeAllObjects];
-            Log("clamp finished, set cleared\n");
-        } else {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{ ClampRound(); });
-        }
     } @catch (NSException *e) {
-        Log("clamp exception: %@\n", e.name);
-        snapActive = NO;
+        Log("tick exception: %@\n", e.name);
     }
 }
+
+// CADisplayLink target
+@interface SBLinkTarget : NSObject @end
+@implementation SBLinkTarget
+- (void)tick { TickFunc(); }
+@end
 
 static IMP OrigSetState;
 static void HookSetState(UIGestureRecognizer *self, SEL _cmd, UIGestureRecognizerState state) {
@@ -147,15 +138,6 @@ static void HookSetState(UIGestureRecognizer *self, SEL _cmd, UIGestureRecognize
             dragging = YES;
         } else if (state == UIGestureRecognizerStateEnded || state == UIGestureRecognizerStateCancelled) {
             dragging = NO;
-            if (!snapActive) {
-                snapActive = YES;
-                clampRounds = 0;
-                // 先等 0.3s (等 SwiftUI 惯性/动画初步稳定), 再开始持续夹
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{
-                    if (snapActive) ClampRound();
-                });
-            }
         }
     } @catch (NSException *e) {}
     ((void(*)(id,SEL,NSInteger))OrigSetState)(self, _cmd, state);
@@ -169,6 +151,9 @@ __attribute__((constructor)) static void Start(void) {
         MSHookMessageEx(gr, @selector(setState:), (IMP)HookSetState, &OrigSetState);
         Class lc = CALayer.class;
         MSHookMessageEx(lc, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
+        linkTarget = [[SBLinkTarget alloc] init];
+        link = [CADisplayLink displayLinkWithTarget:linkTarget selector:@selector(tick)];
+        [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     });
-    Log("SthenoBounds v3.4.19 loaded (persistent clamp 2s)\n");
+    Log("SthenoBounds v3.4.20 loaded (CADisplayLink persistent clamp)\n");
 }
