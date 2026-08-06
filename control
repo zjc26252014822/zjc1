@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.16
+Version: 3.4.17
 Architecture: iphoneos-arm64e
-Description: Stheno v3.4.16：修复全宽层(430x74/430x114/宿主)被排除误杀——排除条件改为宽高都>=90%，全屏宿主出屏恢复到屏幕中心。
+Description: Stheno v3.4.17：只夹被拖动过的层——setPosition hook收集移动层，手势结束只拉回这些出屏层，不误伤静止UI。
 Maintainer: Local
 Author: Local
 Section: Tweaks
