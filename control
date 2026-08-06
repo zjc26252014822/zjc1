@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.18
+Version: 3.4.19
 Architecture: iphoneos-arm64e
-Description: Stheno v3.4.18：处理transform平移——seen[9]证明移动靠transform非setPosition，SNAP时清m41/m42平移+clamp position，尺寸放宽到60-900。
+Description: Stheno v3.4.19：持续夹2秒对抗SwiftUI每帧写回（每0.15s夹一次），拉回时检查祖先链（视觉主体可能是父层）。
 Maintainer: Local
 Author: Local
 Section: Tweaks

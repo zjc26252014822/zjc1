@@ -10,13 +10,11 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno v3.4.18 - 处理 transform 平移 (关键)
-// 铁证: v3.4.15 seen[9] 430x932 sp=(215,-466) pos=(215,466)
-//       position 没变但屏幕坐标变了 -> 移动靠 transform 平移, 不是 setPosition!
-// v3.4.17 失败原因: 拉回 position 但 transform 平移还在 -> 视觉不动
-// 方案: 1) 同时 hook setPosition 和 setTransform 收集移动层
-//       2) SNAP 时: 清掉 transform 平移(m41/m42) + clamp position
-//       3) 尺寸过滤放宽 60~900 (覆盖调整大小后的窗口)
+// Stheno v3.4.19 - 持续夹 2 秒对抗 SwiftUI 写回
+// v3.4.18 证据: tx=0 ty=0 (无 transform), SNAP 拉回后 SwiftUI 又写回 -> fixed=0
+// 真相: SwiftUI 数据驱动渲染, layer position 是渲染结果, 拉一次会被下一帧覆盖
+// 方案: 松手后 2 秒内每 0.15s 强制夹一次 (对抗每帧写回), 且拉回时检查祖先链
+//       (视觉主体可能是父层, 不只 303x303 子层)
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -29,9 +27,12 @@ static void Log(const char *fmt, ...) {
 }
 
 static const CGFloat TopInset = 47.0, BottomInset = 34.0;
-static NSUInteger snapCount, movedSeen;
+static NSUInteger snapCount;
 static NSHashTable *movedSet;
 static BOOL dragging;
+static int clampRounds;      // 已执行的夹紧轮次
+static const int MaxRounds = 14;   // 2.1s / 0.15s
+static BOOL snapActive;
 
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     if (!layer || depth > 12) return NO;
@@ -50,127 +51,110 @@ static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
 static BOOL IsWindowSize(CALayer *layer, CGRect screen) {
     CGFloat w = layer.bounds.size.width, h = layer.bounds.size.height;
     if (w < 60 || h < 60) return NO;
-    if (w >= screen.size.width * 0.9 && h >= screen.size.height * 0.9) return NO; // 全屏宿主
+    if (w >= screen.size.width * 0.9 && h >= screen.size.height * 0.9) return NO;
     return YES;
-}
-
-static void TrackLayer(CALayer *layer, const char *why) {
-    if (!dragging) return;
-    @try {
-        if (!HasSthenoAncestor(layer, 0)) return;
-        CGRect screen = UIScreen.mainScreen.bounds;
-        if (!IsWindowSize(layer, screen)) return;
-        if (![movedSet containsObject:layer]) {
-            [movedSet addObject:layer];
-            movedSeen++;
-            if (movedSeen <= 25) {
-                Log("tracked[%lu]: %.0fx%.0f cls=%s via %s\n",
-                    (unsigned long)movedSeen,
-                    layer.bounds.size.width, layer.bounds.size.height,
-                    class_getName(object_getClass(layer)), why);
-            }
-        }
-    } @catch (NSException *e) {}
 }
 
 static IMP OrigSetPosition;
 static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
-    TrackLayer(self, "setPos");
-    ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
-}
-
-static IMP OrigSetTransform;
-static void HookSetTransform(CALayer *self, SEL _cmd, CATransform3D t) {
     @try {
-        if (dragging && (t.m41 != 0 || t.m42 != 0) && HasSthenoAncestor(self, 0)) {
+        if (dragging && HasSthenoAncestor(self, 0)) {
             CGRect screen = UIScreen.mainScreen.bounds;
             if (IsWindowSize(self, screen)) {
-                if (![movedSet containsObject:self]) {
-                    [movedSet addObject:self];
-                    movedSeen++;
-                    if (movedSeen <= 25) {
-                        Log("tracked[%lu]: %.0fx%.0f cls=%s via setTransform tx=%.0f ty=%.0f\n",
-                            (unsigned long)movedSeen,
-                            self.bounds.size.width, self.bounds.size.height,
-                            class_getName(object_getClass(self)), t.m41, t.m42);
-                    }
-                }
+                [movedSet addObject:self];
             }
         }
     } @catch (NSException *e) {}
-    ((void(*)(id,SEL,CATransform3D))OrigSetTransform)(self, _cmd, t);
+    ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
 }
 
-static void DoSnapBack(void) {
+// 检查并拉回一个层 (返回是否修正)
+static BOOL FixLayer(CALayer *layer, CGRect screen, NSUInteger *outCount) {
+    if (!layer) return NO;
+    CGFloat w = layer.bounds.size.width, h = layer.bounds.size.height;
+    if (w < 20 || h < 20) return NO;
+    CALayer *root = layer;
+    while (root.superlayer) root = root.superlayer;
+    CGPoint sp = layer.position;
+    if (layer.superlayer) sp = [layer.superlayer convertPoint:layer.position toLayer:root];
+    CGFloat hw = w / 2.0, hh = h / 2.0;
+    CGFloat minX = hw, maxX = screen.size.width - hw;
+    CGFloat minY = TopInset + hh, maxY = screen.size.height - BottomInset - hh;
+    if (minX > maxX) { minX = maxX = screen.size.width / 2.0; }
+    if (minY > maxY) { minY = maxY = screen.size.height / 2.0; }
+    CGFloat nx = MIN(MAX(sp.x, minX), maxX);
+    CGFloat ny = MIN(MAX(sp.y, minY), maxY);
+    if (fabs(nx - sp.x) > 1.0 || fabs(ny - sp.y) > 1.0) {
+        CGPoint parentFixed = sp;
+        if (layer.superlayer) parentFixed = [layer.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        layer.position = parentFixed;
+        [CATransaction commit];
+        (*outCount)++;
+        snapCount++;
+        if (snapCount <= 40 || snapCount % 10 == 0) {
+            Log("SNAP[%lu]: %.0fx%.0f sp=(%.0f,%.0f) -> (%.0f,%.0f) cls=%s\n",
+                (unsigned long)snapCount, w, h, sp.x, sp.y, nx, ny,
+                class_getName(object_getClass(layer)));
+        }
+        return YES;
+    }
+    return NO;
+}
+
+static void ClampRound(void) {
     @try {
         CGRect screen = UIScreen.mainScreen.bounds;
         NSUInteger fixed = 0;
-        for (CALayer *layer in movedSet) {
+        // 复制集合快照 (避免遍历中修改)
+        NSArray *snapshot = [movedSet allObjects];
+        for (CALayer *layer in snapshot) {
             if (!layer) continue;
-            CGFloat w = layer.bounds.size.width, h = layer.bounds.size.height;
-            if (w < 20 || h < 20) continue;
-            CALayer *root = layer;
-            while (root.superlayer) root = root.superlayer;
-            // 屏幕坐标 (convertPoint 已包含 transform)
-            CGPoint sp = layer.position;
-            if (layer.superlayer) sp = [layer.superlayer convertPoint:layer.position toLayer:root];
-            // 加上 transform 平移 (convertPoint 可能不含 m41/m42 到 root 的完整链, 手动加)
-            CATransform3D tf = layer.transform;
-            CGFloat tx = tf.m41, ty = tf.m42;
-            CGFloat hw = w / 2.0, hh = h / 2.0;
-            CGFloat minX = hw, maxX = screen.size.width - hw;
-            CGFloat minY = TopInset + hh, maxY = screen.size.height - BottomInset - hh;
-            if (minX > maxX) { minX = maxX = screen.size.width / 2.0; }
-            if (minY > maxY) { minY = maxY = screen.size.height / 2.0; }
-            CGFloat nx = MIN(MAX(sp.x + tx, minX), maxX);
-            CGFloat ny = MIN(MAX(sp.y + ty, minY), maxY);
-            BOOL changed = (fabs((sp.x + tx) - nx) > 1.0 || fabs((sp.y + ty) - ny) > 1.0);
-            if (changed) {
-                // 目标: 屏幕坐标 (nx, ny). 清 transform 平移, 把位移折入 position
-                CGPoint parentFixed = CGPointMake(sp.x, sp.y);
-                if (layer.superlayer) {
-                    parentFixed = [layer.superlayer convertPoint:CGPointMake(nx - tx, ny - ty) fromLayer:root];
-                } else {
-                    parentFixed = CGPointMake(nx - tx, ny - ty);
+            // 拉回层本身
+            FixLayer(layer, screen, &fixed);
+            // 同时检查祖先链 (视觉主体可能是父层)
+            CALayer *anc = layer.superlayer;
+            int depth = 0;
+            while (anc && depth < 6) {
+                if (HasSthenoAncestor(anc, 0)) {
+                    if (FixLayer(anc, screen, &fixed)) break;
                 }
-                [CATransaction begin];
-                [CATransaction setDisableActions:YES];
-                layer.position = parentFixed;
-                if (tf.m41 != 0 || tf.m42 != 0) {
-                    CATransform3D clean = tf;
-                    clean.m41 = 0; clean.m42 = 0;
-                    layer.transform = clean;
-                }
-                [CATransaction commit];
-                fixed++;
-                snapCount++;
-                if (snapCount <= 40 || snapCount % 10 == 0) {
-                    Log("SNAP[%lu]: %.0fx%.0f screen=(%.0f,%.0f) -> (%.0f,%.0f) tx=%.0f ty=%.0f cls=%s\n",
-                        (unsigned long)snapCount, w, h,
-                        sp.x + tx, sp.y + ty, nx, ny, tx, ty,
-                        class_getName(object_getClass(layer)));
-                }
+                anc = anc.superlayer;
+                depth++;
             }
         }
-        [movedSet removeAllObjects];
-        Log("snap done: fixed=%lu tracked_total=%lu\n", (unsigned long)fixed, (unsigned long)movedSeen);
+        clampRounds++;
+        Log("clamp round %d/%d done (fixed=%lu)\n", clampRounds, MaxRounds, (unsigned long)fixed);
+        if (clampRounds >= MaxRounds) {
+            snapActive = NO;
+            [movedSet removeAllObjects];
+            Log("clamp finished, set cleared\n");
+        } else {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ ClampRound(); });
+        }
     } @catch (NSException *e) {
-        Log("snap exception: %@\n", e.name);
+        Log("clamp exception: %@\n", e.name);
+        snapActive = NO;
     }
 }
 
 static IMP OrigSetState;
-static BOOL pending;
 static void HookSetState(UIGestureRecognizer *self, SEL _cmd, UIGestureRecognizerState state) {
     @try {
         if (state == UIGestureRecognizerStateBegan) {
             dragging = YES;
         } else if (state == UIGestureRecognizerStateEnded || state == UIGestureRecognizerStateCancelled) {
             dragging = NO;
-            if (!pending) {
-                pending = YES;
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{ pending = NO; DoSnapBack(); });
+            if (!snapActive) {
+                snapActive = YES;
+                clampRounds = 0;
+                // 先等 0.3s (等 SwiftUI 惯性/动画初步稳定), 再开始持续夹
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                    if (snapActive) ClampRound();
+                });
             }
         }
     } @catch (NSException *e) {}
@@ -185,7 +169,6 @@ __attribute__((constructor)) static void Start(void) {
         MSHookMessageEx(gr, @selector(setState:), (IMP)HookSetState, &OrigSetState);
         Class lc = CALayer.class;
         MSHookMessageEx(lc, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
-        MSHookMessageEx(lc, @selector(setTransform:), (IMP)HookSetTransform, &OrigSetTransform);
     });
-    Log("SthenoBounds v3.4.18 loaded (transform-aware snap)\n");
+    Log("SthenoBounds v3.4.19 loaded (persistent clamp 2s)\n");
 }
