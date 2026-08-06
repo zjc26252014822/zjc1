@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.15
+Version: 3.4.16
 Architecture: iphoneos-arm64e
-Description: Stheno v3.4.15 诊断版：扫描深度12->40，记录扫描到的所有Stheno层+window列表+拖动setPosition，定位为何扫描找不到303x303。
+Description: Stheno v3.4.16：修复全宽层(430x74/430x114/宿主)被排除误杀——排除条件改为宽高都>=90%，全屏宿主出屏恢复到屏幕中心。
 Maintainer: Local
 Author: Local
 Section: Tweaks

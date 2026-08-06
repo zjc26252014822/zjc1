@@ -10,10 +10,14 @@
 #include <unistd.h>
 extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-// Stheno v3.4.15 诊断版 - 为什么扫描找不到 303x303 小窗层?
-// v3.4.14: snap pass 上百次, 只有 61x30 小层被 SNAP, 303x303 从未被拉
-// 调查: 1) 深度限制 12 -> 40  2) 记录扫描到的所有 Stheno 层(前60)  3) 记录 window 列表
-//       4) 顺带 hook setPosition 记录拖动时 303x303 的移动 (前30) 对照
+// Stheno v3.4.16 - 修复"全宽层被误杀"
+// v3.4.15 证据: 用户拖的是全宽层 (430x114 / 430x74 / 430x932 宿主)
+//   seen[40]: 430x74 sp=(252,939) 出屏但没被 SNAP -> 被"w>=90%屏"排除误杀!
+//   seen[9]: 430x932 sp=(215,-466) 宿主被拖出屏 -> 也没处理
+// 修复: 1) 排除条件改为 宽>=90% 且 高>=90% (全宽横条不再误杀)
+//       2) 全屏宿主出屏时恢复到屏幕中心 (215,466)
+//       3) 非全屏层 clamp 到屏幕边界贴边
+// 关键: sp 用 convertPoint 到 root (v3.4.15 验证有效)
 
 static void Log(const char *fmt, ...) {
     int fd = open("/var/mobile/Documents/SthenoBounds.log", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -26,8 +30,7 @@ static void Log(const char *fmt, ...) {
 }
 
 static const CGFloat TopInset = 47.0, BottomInset = 34.0;
-static NSUInteger snapCount, seenCount, winCount;
-static BOOL winListLogged;
+static NSUInteger snapCount, passCount;
 
 static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     if (!layer || depth > 12) return NO;
@@ -43,46 +46,54 @@ static BOOL HasSthenoAncestor(CALayer *layer, int depth) {
     return HasSthenoAncestor(layer.superlayer, depth + 1);
 }
 
-// 记录扫描到的每个 Stheno 层 (前 60 条), 并拉回出屏的
 static void ScanLayerTree(CALayer *layer, int depth, CGRect screen) {
     if (!layer || depth > 40) return;
     @try {
         if (HasSthenoAncestor(layer, 0)) {
             CGFloat w = layer.bounds.size.width, h = layer.bounds.size.height;
-            seenCount++;
-            if (seenCount <= 60) {
+            if (w < 20 || h < 20) { /* 极小层跳过 */ }
+            else {
                 CALayer *root = layer;
                 while (root.superlayer) root = root.superlayer;
                 CGPoint sp = layer.position;
                 if (layer.superlayer) sp = [layer.superlayer convertPoint:layer.position toLayer:root];
-                Log("seen[%lu]: d%d %.0fx%.0f sp=(%.0f,%.0f) pos=(%.0f,%.0f) cls=%s\n",
-                    (unsigned long)seenCount, depth, w, h,
-                    sp.x, sp.y,
-                    layer.position.x, layer.position.y,
-                    class_getName(object_getClass(layer)));
-            }
-            // 拉回: 中型层出屏才动
-            if (w >= 30 && h >= 30 && w < screen.size.width * 0.9 && h < screen.size.height * 0.9) {
-                CALayer *root = layer;
-                while (root.superlayer) root = root.superlayer;
-                CGPoint sp = layer.position;
-                if (layer.superlayer) sp = [layer.superlayer convertPoint:layer.position toLayer:root];
-                CGFloat hw = w / 2.0, hh = h / 2.0;
-                CGFloat nx = MIN(MAX(sp.x, hw), screen.size.width - hw);
-                CGFloat ny = MIN(MAX(sp.y, TopInset + hh), screen.size.height - BottomInset - hh);
-                if (nx != sp.x || ny != sp.y) {
-                    CGPoint fixed = sp;
-                    if (layer.superlayer) fixed = [layer.superlayer convertPoint:CGPointMake(nx, ny) fromLayer:root];
-                    else fixed = CGPointMake(nx, ny);
+                BOOL isFullscreen = (w >= screen.size.width * 0.9 && h >= screen.size.height * 0.9);
+                BOOL changed = NO;
+                CGPoint fixed = sp;
+                if (isFullscreen) {
+                    // 全屏宿主: 只有明显出屏才恢复到屏幕中心
+                    CGFloat cx = screen.size.width / 2.0, cy = screen.size.height / 2.0;
+                    if (fabs(sp.x - cx) > 20 || fabs(sp.y - cy) > 20) {
+                        fixed = CGPointMake(cx, cy);
+                        changed = YES;
+                    }
+                } else {
+                    // 非全屏层: clamp 到屏幕内贴边
+                    CGFloat hw = w / 2.0, hh = h / 2.0;
+                    CGFloat minX = hw, maxX = screen.size.width - hw;
+                    CGFloat minY = TopInset + hh, maxY = screen.size.height - BottomInset - hh;
+                    if (minX > maxX) { minX = maxX = screen.size.width / 2.0; }
+                    if (minY > maxY) { minY = maxY = screen.size.height / 2.0; }
+                    CGFloat nx = MIN(MAX(sp.x, minX), maxX);
+                    CGFloat ny = MIN(MAX(sp.y, minY), maxY);
+                    if (nx != sp.x || ny != sp.y) {
+                        fixed = CGPointMake(nx, ny);
+                        changed = YES;
+                    }
+                }
+                if (changed) {
+                    CGPoint parentFixed = fixed;
+                    if (layer.superlayer) parentFixed = [layer.superlayer convertPoint:fixed fromLayer:root];
                     [CATransaction begin];
                     [CATransaction setDisableActions:YES];
-                    layer.position = fixed;
+                    layer.position = parentFixed;
                     [CATransaction commit];
                     snapCount++;
                     if (snapCount <= 40 || snapCount % 10 == 0) {
-                        Log("SNAP[%lu]: %.0fx%.0f sp=(%.0f,%.0f) -> (%.0f,%.0f) cls=%s\n",
-                            (unsigned long)snapCount, w, h, sp.x, sp.y, nx, ny,
-                            class_getName(object_getClass(layer)));
+                        Log("SNAP[%lu]: %.0fx%.0f sp=(%.0f,%.0f) -> (%.0f,%.0f) cls=%s%s\n",
+                            (unsigned long)snapCount, w, h, sp.x, sp.y, fixed.x, fixed.y,
+                            class_getName(object_getClass(layer)),
+                            isFullscreen ? " [FULLSCREEN]" : "");
                     }
                 }
             }
@@ -103,24 +114,11 @@ static void DoSnapBack(void) {
             if (![scene isKindOfClass:[UIWindowScene class]]) continue;
             [allWindows addObjectsFromArray:((UIWindowScene *)scene).windows];
         }
-        // 记录 window 列表 (只一次)
-        if (!winListLogged) {
-            for (UIWindow *w in allWindows) {
-                winCount++;
-                if (winCount <= 15) {
-                    Log("win[%lu]: %s frame=(%.0f,%.0f %.0fx%.0f)\n",
-                        (unsigned long)winCount,
-                        class_getName(object_getClass(w)),
-                        w.frame.origin.x, w.frame.origin.y,
-                        w.frame.size.width, w.frame.size.height);
-                }
-            }
-            winListLogged = YES;
-        }
         for (UIWindow *w in allWindows) {
             ScanLayerTree(w.layer, 0, screen);
         }
-        Log("snap pass done (seen=%lu snap=%lu)\n", (unsigned long)seenCount, (unsigned long)snapCount);
+        passCount++;
+        Log("snap pass #%lu done (snap=%lu)\n", (unsigned long)passCount, (unsigned long)snapCount);
     } @catch (NSException *e) {
         Log("snap pass exception: %@\n", e.name);
     }
@@ -139,31 +137,11 @@ static void HookSetState(UIGestureRecognizer *self, SEL _cmd, UIGestureRecognize
     } @catch (NSException *e) {}
 }
 
-// 观测拖动时的 setPosition (前 30 条)
-static IMP OrigSetPosition;
-static NSUInteger obsCount;
-static void HookSetPosition(CALayer *self, SEL _cmd, CGPoint pos) {
-    @try {
-        if (HasSthenoAncestor(self, 0)) {
-            CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-            if (w >= 100 && h >= 100 && w < 450 && h < 800 && obsCount < 30) {
-                obsCount++;
-                Log("drag[%lu]: %.0fx%.0f pos=(%.0f,%.0f) cls=%s\n",
-                    (unsigned long)obsCount, w, h, pos.x, pos.y,
-                    class_getName(object_getClass(self)));
-            }
-        }
-    } @catch (NSException *e) {}
-    ((void(*)(id,SEL,CGPoint))OrigSetPosition)(self, _cmd, pos);
-}
-
 __attribute__((constructor)) static void Start(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         Class gr = UIGestureRecognizer.class;
         MSHookMessageEx(gr, @selector(setState:), (IMP)HookSetState, &OrigSetState);
-        Class lc = CALayer.class;
-        MSHookMessageEx(lc, @selector(setPosition:), (IMP)HookSetPosition, &OrigSetPosition);
     });
-    Log("SthenoBounds v3.4.15 loaded (diagnose: why scan misses 303x303)\n");
+    Log("SthenoBounds v3.4.16 loaded (fix full-width layers + fullscreen restore)\n");
 }
