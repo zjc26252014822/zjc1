@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Fix (Bounds + Keyboard)
-Version: 3.4.17
+Version: 3.4.18
 Architecture: iphoneos-arm64e
-Description: Stheno v3.4.17：只夹被拖动过的层——setPosition hook收集移动层，手势结束只拉回这些出屏层，不误伤静止UI。
+Description: Stheno v3.4.18：处理transform平移——seen[9]证明移动靠transform非setPosition，SNAP时清m41/m42平移+clamp position，尺寸放宽到60-900。
 Maintainer: Local
 Author: Local
 Section: Tweaks
