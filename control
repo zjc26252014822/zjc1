@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Transform Trace
-Version: 3.5.2
+Name: Stheno Bounds Safe Reset
+Version: 3.5.3
 Architecture: iphoneos-arm64e
-Description: De-duplicated card layer transform trace for Stheno bounds repair.
+Description: Emergency safe reset; removes unsafe global Core Animation hooks.
 Maintainer: Local
 Author: Local
 Section: Tweaks
