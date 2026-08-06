@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
-Name: Stheno Bounds Safe Reset
-Version: 3.5.3
+Name: Stheno Card Bounds
+Version: 3.6.0
 Architecture: iphoneos-arm64e
-Description: Emergency safe reset; removes unsafe global Core Animation hooks.
+Description: Targeted post-settle Stheno card offset bounds correction.
 Maintainer: Local
 Author: Local
 Section: Tweaks
