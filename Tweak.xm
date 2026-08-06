@@ -29,7 +29,7 @@ static void Log(const char *fmt, ...) {
 }
 
 static const CGFloat TopInset = 47.0, BottomInset = 34.0;
-static NSUInteger snapCount, movedSeen, tfSeen;
+static NSUInteger snapCount, movedSeen;
 static NSHashTable *movedSet;
 static BOOL dragging;
 
