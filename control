@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Card Bounds
-Version: 3.6.9
+Version: 3.7.0
 Architecture: iphoneos-arm64e
-Description: Traces Medusa scene frame updates without mutation.
+Description: Traces Stheno private drag callback candidates without mutation.
 Maintainer: Local
 Author: Local
 Section: Tweaks
