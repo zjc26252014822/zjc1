@@ -16,7 +16,7 @@ static void Log(const char *f, ...) {
 
 static void FindSceneImplementations(void) {
     SEL target=sel_registerName("_scene:interceptUpdateWithNewSettings:");
-    int count=objc_getClassList(NULL,0); Class *classes=calloc((size_t)count,sizeof(Class));
+    int count=objc_getClassList(NULL,0); Class *classes=(Class *)calloc((size_t)count,sizeof(Class));
     if(!classes)return;
     count=objc_getClassList(classes,count); NSUInteger hits=0;
     for(int i=0;i<count;i++){
