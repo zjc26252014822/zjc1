@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Card Bounds
-Version: 3.6.3
+Version: 3.6.4
 Architecture: iphoneos-arm64e
-Description: Holds bounded Stheno card state through its deferred frame update.
+Description: Traces Stheno private drag callback without changing card state.
 Maintainer: Local
 Author: Local
 Section: Tweaks
