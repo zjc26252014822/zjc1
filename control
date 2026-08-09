@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Card Bounds
-Version: 3.6.2
+Version: 3.6.3
 Architecture: iphoneos-arm64e
-Description: Synchronizes Stheno final frame state with bounded card offset.
+Description: Holds bounded Stheno card state through its deferred frame update.
 Maintainer: Local
 Author: Local
 Section: Tweaks
