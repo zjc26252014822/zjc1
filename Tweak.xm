@@ -1,42 +1,38 @@
 #import <Foundation/Foundation.h>
 #import <substrate.h>
-#import <mach-o/dyld.h>
-#import <dlfcn.h>
+#import <objc/runtime.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
 
-extern void MSHookFunction(void *, void *, void **);
+extern void MSHookMessageEx(Class, SEL, IMP, IMP *);
 
-typedef void (*DragChangedFn)(void *, void *, uintptr_t);
-static DragChangedFn OrigDragChanged;
+typedef void (*SceneUpdateFn)(id, SEL, id, id);
+static SceneUpdateFn OrigSceneUpdate;
 static NSUInteger events;
 
 static void Log(const char *f, ...) {
     int d=open("/var/mobile/Documents/SthenoBounds.trace",O_WRONLY|O_CREAT|O_APPEND,0644);
     if(d<0)return;
-    char b[240]; va_list a; va_start(a,f); int n=vsnprintf(b,sizeof b,f,a); va_end(a);
-    if(n>0)write(d,b,(unsigned long)(n<239?n:239)); close(d);
+    char b[280]; va_list a; va_start(a,f); int n=vsnprintf(b,sizeof b,f,a); va_end(a);
+    if(n>0)write(d,b,(unsigned long)(n<279?n:279)); close(d);
 }
 
-/* Stheno.dylib + 0x2f894 is its private DragGesture.onChanged callback. */
-static void DragChanged(void *value, void *capture, uintptr_t flags) {
-    if(events<48){
+/* This is the Medusa scene-update selector already hooked by Stheno itself. */
+static void SceneUpdate(id self, SEL cmd, id scene, id settings) {
+    if(events<64){
         events++;
-        Log("DRAG %lu value=%p capture=%p flags=%#llx\n",(unsigned long)events,value,capture,(unsigned long long)flags);
+        Log("SCENE %lu controller=%s scene=%s settings=%s\n",(unsigned long)events,object_getClassName(self),object_getClassName(scene),object_getClassName(settings));
     }
-    OrigDragChanged(value,capture,flags);
-}
-
-static void Add(const struct mach_header *h, intptr_t slide) {
-    static BOOL done; if(done)return; Dl_info d={0};
-    if(!dladdr(h,&d)||!d.dli_fname||!strstr(d.dli_fname,"Stheno.dylib"))return;
-    MSHookFunction((void *)((uintptr_t)h+0x2f894),(void *)DragChanged,(void **)&OrigDragChanged);
-    done=YES; Log("drag trace armed slide=%#llx\n",(unsigned long long)slide);
+    OrigSceneUpdate(self,cmd,scene,settings);
 }
 
 __attribute__((constructor))static void Start(void) {
-    _dyld_register_func_for_add_image(Add);
+    unlink("/var/mobile/Documents/SthenoBounds.trace");
+    Class c=objc_getClass("SBDeviceApplicationSceneViewController");
+    SEL s=sel_registerName("_scene:interceptUpdateWithNewSettings:");
+    if(!c||!class_getInstanceMethod(c,s)){Log("scene trace unavailable class=%p\n",c);return;}
+    MSHookMessageEx(c,s,(IMP)SceneUpdate,(IMP *)&OrigSceneUpdate);
+    Log("scene trace armed\n");
 }
