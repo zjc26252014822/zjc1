@@ -2,7 +2,7 @@ Package: com.nx.stheno.bounds
 Name: Stheno Card Bounds
 Version: 3.7.6
 Architecture: iphoneos-arm64e
-Description: Enumerates windows via plain runtime C calls to confirm Stheno class.
+Description: Enumerates windows via typed runtime C functions to confirm Stheno class.
 Maintainer: Local
 Author: Local
 Section: Tweaks
