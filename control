@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Card Bounds
-Version: 3.7.3
+Version: 3.7.4
 Architecture: iphoneos-arm64e
-Description: Scans window scenes to confirm Stheno window class name.
+Description: Enumerates windows via runtime calls to confirm Stheno class.
 Maintainer: Local
 Author: Local
 Section: Tweaks

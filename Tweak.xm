@@ -13,26 +13,20 @@ static void Log(const char *f, ...) {
 }
 
 /* Strategy from the reference repo: constrain Stheno windows to screen bounds.
-   This build enumerates windows to confirm the real Stheno class name. */
+   This build enumerates windows via NSClass/selector runtime calls only. */
 static void ScanWindows(void) {
-    UIWindow *stheno=nil;
-    if(@available(iOS 15.0,*)){
-        for(UIScene *scene in UIApplication.sharedApplication.connectedScenes){
-            if(![scene isKindOfClass:[UIWindowScene class]])continue;
-            UIWindowScene *ws=(UIWindowScene *)scene;
-            for(UIWindow *w in ws.windows){
-                NSString *cn=NSStringFromClass([w class]); CGRect f=w.frame;
-                Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
-                if([cn containsString:@"Stheno"]){stheno=w;}
-            }
-        }
-    }else{
-        for(UIWindow *w in UIApplication.sharedApplication.windows){
-            NSString *cn=NSStringFromClass([w class]); CGRect f=w.frame;
-            Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
-            if([cn containsString:@"Stheno"]){stheno=w;}
-        }
+    UIApplication *app=objc_getClass("UIApplication") ? ((UIApplication *(*)(Class,SEL))objc_msgSend)(objc_getClass("UIApplication"),sel_registerName("sharedApplication")) : nil;
+    UIWindow *stheno=nil; NSUInteger idx=0;
+    if(!app){Log("no UIApplication\n");return;}
+    SEL wp=sel_registerName("windows");
+    NSArray<UIWindow *> *wins=((NSArray<UIWindow *> *(*)(id,SEL))objc_msgSend)((id)app,wp);
+    for(UIWindow *w in wins){
+        NSString *cn=NSStringFromClass([w class]); CGRect f=w.frame;
+        Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
+        if([cn containsString:@"Stheno"]){stheno=w;}
+        idx++;
     }
+    Log("window count=%lu\n",(unsigned long)idx);
     if(stheno){NSString *cn=NSStringFromClass([stheno class]);Log("STHENO-WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",stheno,cn.UTF8String,stheno.frame.origin.x,stheno.frame.origin.y,stheno.frame.size.width,stheno.frame.size.height);}
     else{Log("no Stheno-prefixed window found\n");}
 }
