@@ -27,7 +27,7 @@ static void ScanWindows(void) {
     SEL sa=sel_registerName("sharedApplication"); id app=smFn(UIApplicationClass,sa);
     if(!app){Log("no UIApplication instance\n");return;}
     SEL wp=sel_registerName("windows"); id wins=smFn(app,wp);
-    SEL cs=sel_registerName("class"); SEL fr=sel_registerName("frame");
+    SEL fr=sel_registerName("frame");
     NSUInteger idx=[(id)wins count]; NSUInteger i;
     id stheno=nil;
     for(i=0;i<idx;i++){
