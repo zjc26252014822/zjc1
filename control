@@ -1,8 +1,8 @@
 Package: com.nx.stheno.bounds
 Name: Stheno Card Bounds
-Version: 3.7.1
+Version: 3.7.2
 Architecture: iphoneos-arm64e
-Description: Traces Stheno DragGesture translation call sites without mutation.
+Description: Scans UIWindow list to confirm Stheno window class name.
 Maintainer: Local
 Author: Local
 Section: Tweaks

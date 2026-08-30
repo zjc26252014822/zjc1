@@ -16,6 +16,7 @@ TWEAK_NAME = 000SthenoBounds 000SthenoKeyboardFix
 000SthenoBounds_FRAMEWORKS = UIKit Foundation
 000SthenoBounds_LIBRARIES = substrate roothide
 000SthenoBounds_CODESIGN_FLAGS = -SSthenoBounds.entitlements
+000SthenoBounds_INSTALL = SpringBoard
 
 # --- Tweak 2: 键盘修复，hook 系统键盘类 (UIKit 进程 = app/SpringBoard)
 000SthenoKeyboardFix_FILES = KeyboardFix.xm
