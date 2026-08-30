@@ -72,7 +72,7 @@ Submodule path 'vendor/swift-support': checked out '4cf59ff04cdb2ceb27ea2228753e
 Submodule path 'vendor/templates': checked out '6c3944e281c4726f1383755d0fbb642840312d28'
 + git clone --depth 1 https://github.com/theos/sdks.git /Users/runner/work/_temp/theos-sdks
 Cloning into '/Users/runner/work/_temp/theos-sdks'...
-Updating files:   9% (5088/56286)Updating files:  10% (5629/56286)Updating files:  11% (6192/56286)Updating files:  12% (6755/56286)Updating files:  13% (7318/56286)Updating files:  14% (7881/56286)Updating files:  15% (8443/56286)Updating files:  16% (9006/56286)Updating files:  17% (9569/56286)Updating files:  18% (10132/56286)Updating files:  19% (10695/56286)Updating files:  19% (10876/56286)Updating files:  20% (11258/56286)Updating files:  21% (11821/56286)Updating files:  22% (12383/56286)Updating files:  23% (12946/56286)Updating files:  24% (13509/56286)Updating files:  25% (14072/56286)Updating files:  26% (14635/56286)Updating files:  27% (15198/56286)Updating files:  28% (15761/56286)Updating files:  29% (16323/56286)Updating files:  30% (16886/56286)Updating files:  30% (17090/56286)Updating files:  31% (17449/56286)Updating files:  32% (18012/56286)Updating files:  33% (18575/56286)Updating files:  34% (19138/56286)Updating files:  35% (19701/56286)Updating files:  36% (20263/56286)Updating files:  37% (20826/56286)Updating files:  38% (21389/56286)Updating files:  39% (21952/56286)Updating files:  40% (22515/56286)Updating files:  40% (22949/56286)Updating files:  41% (23078/56286)Updating files:  42% (23641/56286)Updating files:  43% (24203/56286)Updating files:  44% (24766/56286)Updating files:  45% (25329/56286)Updating files:  46% (25892/56286)Updating files:  47% (26455/56286)Updating files:  48% (27018/56286)Updating files:  49% (27581/56286)Updating files:  49% (27839/56286)Updating files:  50% (28143/56286)Updating files:  51% (28706/56286)Updating files:  52% (29269/56286)Updating files:  53% (29832/56286)Updating files:  54% (30395/56286)Updating files:  55% (30958/56286)Updating files:  56% (31521/56286)Updating files:  57% (32084/56286)Updating files:  58% (32646/56286)Updating files:  58% (32957/56286)Updating files:  59% (33209/56286)Updating files:  60% (33772/56286)Updating files:  61% (34335/56286)Updating files:  62% (34898/56286)Updating files:  63% (35461/56286)Updating files:  64% (36024/56286)Updating files:  65% (36586/56286)Updating files:  66% (37149/56286)Updating files:  67% (37712/56286)Updating files:  68% (38275/56286)Updating files:  68% (38291/56286)Updating files:  69% (38838/56286)Updating files:  70% (39401/56286)Updating files:  71% (39964/56286)Updating files:  72% (40526/56286)Updating files:  73% (41089/56286)Updating files:  74% (41652/56286)Updating files:  75% (42215/56286)Updating files:  76% (42778/56286)Updating files:  76% (42977/56286)Updating files:  77% (43341/56286)Updating files:  78% (43904/56286)Updating files:  79% (44466/56286)Updating files:  80% (45029/56286)Updating files:  81% (45592/56286)Updating files:  82% (46155/56286)Updating files:  82% (46404/56286)Updating files:  83% (46718/56286)Updating files:  84% (47281/56286)Updating files:  85% (47844/56286)Updating files:  86% (48406/56286)Updating files:  87% (48969/56286)Updating files:  88% (49532/56286)Updating files:  89% (50095/56286)Updating files:  89% (50523/56286)Updating files:  90% (50658/56286)Updating files:  91% (51221/56286)Updating files:  92% (51784/56286)Updating files:  93% (52346/56286)Updating files:  94% (52909/56286)Updating files:  95% (53472/56286)Updating files:  96% (54035/56286)Updating files:  97% (54598/56286)Updating files:  98% (55161/56286)Updating files:  99% (55724/56286)Updating files:  99% (56039/56286)Updating files: 100% (56286/56286)Updating files: 100% (56286/56286), done.
+Updating files:  11% (6579/56286)Updating files:  12% (6755/56286)Updating files:  13% (7318/56286)Updating files:  14% (7881/56286)Updating files:  15% (8443/56286)Updating files:  16% (9006/56286)Updating files:  17% (9569/56286)Updating files:  18% (10132/56286)Updating files:  19% (10695/56286)Updating files:  20% (11258/56286)Updating files:  21% (11821/56286)Updating files:  22% (12383/56286)Updating files:  22% (12444/56286)Updating files:  23% (12946/56286)Updating files:  24% (13509/56286)Updating files:  25% (14072/56286)Updating files:  26% (14635/56286)Updating files:  27% (15198/56286)Updating files:  28% (15761/56286)Updating files:  29% (16323/56286)Updating files:  30% (16886/56286)Updating files:  31% (17449/56286)Updating files:  32% (18012/56286)Updating files:  33% (18575/56286)Updating files:  34% (19138/56286)Updating files:  35% (19701/56286)Updating files:  36% (20263/56286)Updating files:  37% (20826/56286)Updating files:  37% (20869/56286)Updating files:  38% (21389/56286)Updating files:  39% (21952/56286)Updating files:  40% (22515/56286)Updating files:  41% (23078/56286)Updating files:  42% (23641/56286)Updating files:  43% (24203/56286)Updating files:  44% (24766/56286)Updating files:  45% (25329/56286)Updating files:  46% (25892/56286)Updating files:  47% (26455/56286)Updating files:  47% (26837/56286)Updating files:  48% (27018/56286)Updating files:  49% (27581/56286)Updating files:  50% (28143/56286)Updating files:  51% (28706/56286)Updating files:  52% (29269/56286)Updating files:  53% (29832/56286)Updating files:  54% (30395/56286)Updating files:  55% (30958/56286)Updating files:  55% (31494/56286)Updating files:  56% (31521/56286)Updating files:  57% (32084/56286)Updating files:  58% (32646/56286)Updating files:  59% (33209/56286)Updating files:  60% (33772/56286)Updating files:  61% (34335/56286)Updating files:  62% (34898/56286)Updating files:  62% (35066/56286)Updating files:  63% (35461/56286)Updating files:  64% (36024/56286)Updating files:  65% (36586/56286)Updating files:  66% (37149/56286)Updating files:  67% (37712/56286)Updating files:  68% (38275/56286)Updating files:  69% (38838/56286)Updating files:  70% (39401/56286)Updating files:  71% (39964/56286)Updating files:  72% (40526/56286)Updating files:  72% (40785/56286)Updating files:  73% (41089/56286)Updating files:  74% (41652/56286)Updating files:  75% (42215/56286)Updating files:  76% (42778/56286)Updating files:  77% (43341/56286)Updating files:  78% (43904/56286)Updating files:  78% (44191/56286)Updating files:  79% (44466/56286)Updating files:  80% (45029/56286)Updating files:  81% (45592/56286)Updating files:  82% (46155/56286)Updating files:  83% (46718/56286)Updating files:  84% (47281/56286)Updating files:  85% (47844/56286)Updating files:  86% (48406/56286)Updating files:  87% (48969/56286)Updating files:  88% (49532/56286)Updating files:  88% (49939/56286)Updating files:  89% (50095/56286)Updating files:  90% (50658/56286)Updating files:  91% (51221/56286)Updating files:  92% (51784/56286)Updating files:  93% (52346/56286)Updating files:  94% (52909/56286)Updating files:  95% (53472/56286)Updating files:  96% (54035/56286)Updating files:  96% (54430/56286)Updating files:  97% (54598/56286)Updating files:  98% (55161/56286)Updating files:  99% (55724/56286)Updating files: 100% (56286/56286)Updating files: 100% (56286/56286), done.
 + cp -R /Users/runner/work/_temp/theos-sdks/iPhoneOS16.5.sdk /Users/runner/work/_temp/theos/sdks/
 + sed -i '' 's|^export THEOS = .*|export THEOS = /Users/runner/work/_temp/theos|' Makefile
 + make clean package FINALPACKAGE=1
@@ -81,19 +81,49 @@ Updating files:   9% (5088/56286)Updating files:  10% (5629/56286)Updating fil
 [1;31m> [1;3;39mMaking all for tweak 000SthenoBounds…[m
 [0;31m==> [1;39mPreprocessing Tweak.xm…[m
 [0;32m==> [1;39mCompiling Tweak.xm (arm64)…[m
-[1mTweak.xm:21:42: [0m[0;1;31merror: [0m[1muse of undeclared identifier 'objc_msgSend'[0m
-    void(*saFn)(id,SEL)=(void(*)(id,SEL))objc_msgSend; saFn((id)UIApplicationClass,sa);
-[0;1;32m                                         ^
-[0m[1mTweak.xm:22:9: [0m[0;1;31merror: [0m[1mcast of a non-Objective-C pointer type 'void (*)(__strong id, SEL)' to 'id' is disallowed with ARC[0m
-    app=(id)saFn;
-[0;1;32m        ^~~~~~~~
-[0m[1mTweak.xm:26:42: [0m[0;1;31merror: [0m[1muse of undeclared identifier 'objc_msgSend'[0m
-    void(*wsFn)(id,SEL)=(void(*)(id,SEL))objc_msgSend;
-[0;1;32m                                         ^
-[0m[1mTweak.xm:27:33: [0m[0;1;31merror: [0m[1muse of undeclared identifier 'objc_msgSend'[0m
-    wins=(NSArray<UIWindow *> *)objc_msgSend(app,wp);
-[0;1;32m                                ^
-[0m4 errors generated.
+[1mTweak.xm:23:12: [0m[0;1;31merror: [0m[1mno matching function for call to 'objc_msgSend'[0m
+    id app=objc_msgSend((id)UIApplicationClass,sa);
+[0;1;32m           ^~~~~~~~~~~~
+[0m[1m/Users/runner/work/_temp/theos/sdks/iPhoneOS16.5.sdk/usr/include/objc/message.h:59:1: [0m[0;1;30mnote: [0mcandidate function not viable: requires 0 arguments, but 2 were provided[0m
+objc_msgSend(void /* id self, SEL op, ... */ )
+[0;1;32m^
+[0m[1mTweak.xm:23:8: [0m[0;1;31merror: [0m[1mcannot initialize a variable of type '__strong id' with an rvalue of type 'void'[0m
+    id app=objc_msgSend((id)UIApplicationClass,sa);
+[0;1;32m       ^   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[0m[1mTweak.xm:26:19: [0m[0;1;31merror: [0m[1mno matching function for call to 'objc_msgSend'[0m
+    NSArray *wins=objc_msgSend(app,wp);
+[0;1;32m                  ^~~~~~~~~~~~
+[0m[1m/Users/runner/work/_temp/theos/sdks/iPhoneOS16.5.sdk/usr/include/objc/message.h:59:1: [0m[0;1;30mnote: [0mcandidate function not viable: requires 0 arguments, but 2 were provided[0m
+objc_msgSend(void /* id self, SEL op, ... */ )
+[0;1;32m^
+[0m[1mTweak.xm:26:14: [0m[0;1;31merror: [0m[1mcannot initialize a variable of type 'NSArray *__strong' with an rvalue of type 'void'[0m
+    NSArray *wins=objc_msgSend(app,wp);
+[0;1;32m             ^    ~~~~~~~~~~~~~~~~~~~~
+[0m[1mTweak.xm:28:5: [0m[0;1;31merror: [0m[1munknown type name 'UIWindow'[0m
+    UIWindow *stheno=nil;
+[0;1;32m    ^
+[0m[1mTweak.xm:30:14: [0m[0;1;31merror: [0m[1mno matching function for call to 'objc_msgSend'[0m
+        id w=objc_msgSend((id)wins,sel_registerName("objectAtIndex:"),i);
+[0;1;32m             ^~~~~~~~~~~~
+[0m[1m/Users/runner/work/_temp/theos/sdks/iPhoneOS16.5.sdk/usr/include/objc/message.h:59:1: [0m[0;1;30mnote: [0mcandidate function not viable: requires 0 arguments, but 3 were provided[0m
+objc_msgSend(void /* id self, SEL op, ... */ )
+[0;1;32m^
+[0m[1mTweak.xm:30:12: [0m[0;1;31merror: [0m[1mcannot initialize a variable of type '__strong id' with an rvalue of type 'void'[0m
+        id w=objc_msgSend((id)wins,sel_registerName("objectAtIndex:"),i);
+[0;1;32m           ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[0m[1mTweak.xm:31:40: [0m[0;1;31merror: [0m[1mincompatible types casting 'Class' to 'Class' with a __bridge cast[0m
+        NSString *cn=NSStringFromClass((__bridge Class)([w class]));
+[0;1;32m                                       ^         ~~~~~ ~~~~~~~~~~~
+[0m[1mTweak.xm:32:19: [0m[0;1;31merror: [0m[1mno matching function for call to 'objc_msgSend_stret'[0m
+        CGRect f; objc_msgSend_stret(&f, w, sel_registerName("frame"));
+[0;1;32m                  ^~~~~~~~~~~~~~~~~~
+[0m[1m/Users/runner/work/_temp/theos/sdks/iPhoneOS16.5.sdk/usr/include/objc/message.h:119:1: [0m[0;1;30mnote: [0mcandidate function not viable: requires 0 arguments, but 3 were provided[0m
+objc_msgSend_stret(void /* id self, SEL op, ... */ )
+[0;1;32m^
+[0m[1mTweak.xm:34:60: [0m[0;1;31merror: [0m[1munknown type name 'UIWindow'[0m
+        if([cn containsString:@"Stheno"]){stheno=(__bridge UIWindow *)w;}
+[0;1;32m                                                           ^
+[0m10 errors generated.
 make[3]: *** [/Users/runner/work/zjc1/zjc1/.theos/obj/arm64/Tweak.xm.d9e934ff.o] Error 1
 rm /Users/runner/work/zjc1/zjc1/.theos/obj/arm64/Tweak.xm.mm
 make[2]: *** [/Users/runner/work/zjc1/zjc1/.theos/obj/arm64/000SthenoBounds.dylib] Error 2
