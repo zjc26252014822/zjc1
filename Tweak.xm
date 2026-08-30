@@ -13,15 +13,28 @@ static void Log(const char *f, ...) {
 }
 
 /* Strategy from the reference repo: constrain Stheno windows to screen bounds.
-   This build only enumerates window classes to confirm the real class name. */
+   This build enumerates windows to confirm the real Stheno class name. */
 static void ScanWindows(void) {
-    UIWindow *key=nil; BOOL found=0;
-    for(UIWindow *w in UIApplication.sharedApplication.windows){
-        NSString *cn=NSStringFromClass([w class]); CGRect f=w.frame;
-        Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
-        if([cn containsString:@"Stheno"]){key=w;found=1;}
+    UIWindow *stheno=nil;
+    if(@available(iOS 15.0,*)){
+        for(UIScene *scene in UIApplication.sharedApplication.connectedScenes){
+            if(![scene isKindOfClass:[UIWindowScene class]])continue;
+            UIWindowScene *ws=(UIWindowScene *)scene;
+            for(UIWindow *w in ws.windows){
+                NSString *cn=NSStringFromClass([w class]); CGRect f=w.frame;
+                Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
+                if([cn containsString:@"Stheno"]){stheno=w;}
+            }
+        }
+    }else{
+        for(UIWindow *w in UIApplication.sharedApplication.windows){
+            NSString *cn=NSStringFromClass([w class]); CGRect f=w.frame;
+            Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
+            if([cn containsString:@"Stheno"]){stheno=w;}
+        }
     }
-    if(found&&key){NSString *cn=NSStringFromClass([key class]);Log("STHENO-WINDOW %p class=%s\n",key,cn.UTF8String);}else Log("no Stheno window in UIApplication.windows\n");
+    if(stheno){NSString *cn=NSStringFromClass([stheno class]);Log("STHENO-WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",stheno,cn.UTF8String,stheno.frame.origin.x,stheno.frame.origin.y,stheno.frame.size.width,stheno.frame.size.height);}
+    else{Log("no Stheno-prefixed window found\n");}
 }
 static void Init(void){unlink("/var/mobile/Documents/SthenoBounds.trace"); Log("scan started\n"); dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3LL*NSEC_PER_SEC),dispatch_get_main_queue(),^{ScanWindows();}); }
 __attribute__((constructor))static void Start(void){ dispatch_async(dispatch_get_main_queue(),^{ Init(); }); }
