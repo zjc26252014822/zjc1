@@ -17,26 +17,29 @@ static void Log(const char *f, ...) {
 /* Strategy from the reference repo: constrain Stheno windows to screen bounds.
    This build enumerates windows via plain runtime C calls. No setFrame hook yet. */
 static void ScanWindows(void) {
-    typedef id (*SM)(Class,SEL); typedef id (*SM1)(id,SEL,NSUInteger); typedef CGRect (*SF)(id,SEL);
-    SM smFn=(SM)objc_msgSend; SM1 sm1=(SM1)objc_msgSend; SF sfFn=(SF)objc_msgSend_stret;
-    Class UIApplicationClass=objc_getClass("UIApplication");
+    typedef id (*SM)(id,SEL); typedef id (*SM1)(id,SEL,NSUInteger); typedef CGRect (*SF)(id,SEL);
+    SM smFn; SM1 sm1; SF sfFn;
+    *(void **)&smFn=(void *)objc_msgSend;
+    *(void **)&sm1=(void *)objc_msgSend;
+    *(void **)&sfFn=(void *)objc_msgSend;
+    id UIApplicationClass=(id)objc_getClass("UIApplication");
     if(!UIApplicationClass){Log("no UIApplication class\n");return;}
     SEL sa=sel_registerName("sharedApplication"); id app=smFn(UIApplicationClass,sa);
     if(!app){Log("no UIApplication instance\n");return;}
-    SEL wp=sel_registerName("windows"); NSArray *wins=smFn(app,wp);
-    NSUInteger idx=[(NSArray *)wins count]; NSUInteger i;
+    SEL wp=sel_registerName("windows"); id wins=smFn(app,wp);
+    SEL ct=sel_registerName("count"); NSUInteger idx=[(NSArray *)wins count]; NSUInteger i;
     id stheno=nil;
     for(i=0;i<idx;i++){
-        SEL oai=sel_registerName("objectAtIndex:"); id w=sm1((id)wins,oai,i);
-        Class wc=smFn(w,sel_registerName("class")); NSString *cn=NSStringFromClass(wc);
+        SEL oai=sel_registerName("objectAtIndex:"); id w=sm1(wins,oai,i);
+        SEL cs=sel_registerName("class"); id wc=smFn(w,cs); NSString *cn=NSStringFromClass((__bridge Class)wc);
         CGRect f=sfFn(w,sel_registerName("frame"));
-        Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
+        Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",(__bridge void *)w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
         if([cn containsString:@"Stheno"]){stheno=w;}
     }
     Log("window count=%lu\n",(unsigned long)idx);
     if(stheno){
-        Class sc=smFn(stheno,sel_registerName("class")); CGRect f=sfFn(stheno,sel_registerName("frame"));
-        Log("STHENO-WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",stheno,NSStringFromClass(sc).UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
+        id sc=smFn(stheno,cs); CGRect f=sfFn(stheno,sel_registerName("frame"));
+        Log("STHENO-WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",(__bridge void *)stheno,NSStringFromClass((__bridge Class)sc).UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
     }else{Log("no Stheno-prefixed window found\n");}
 }
 static void Init(void){unlink("/var/mobile/Documents/SthenoBounds.trace"); Log("scan started\n"); dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3LL*NSEC_PER_SEC),dispatch_get_main_queue(),^{ScanWindows();}); }
