@@ -15,11 +15,16 @@ static void Log(const char *f, ...) {
 /* Strategy from the reference repo: constrain Stheno windows to screen bounds.
    This build enumerates windows via NSClass/selector runtime calls only. */
 static void ScanWindows(void) {
-    UIApplication *app=objc_getClass("UIApplication") ? ((UIApplication *(*)(Class,SEL))objc_msgSend)(objc_getClass("UIApplication"),sel_registerName("sharedApplication")) : nil;
+    Class UIApplicationClass=objc_getClass("UIApplication");
+    if(!UIApplicationClass){Log("no UIApplication class\n");return;}
+    SEL sa=sel_registerName("sharedApplication"); id app=nil;
+    void(*saFn)(id,SEL)=(void(*)(id,SEL))objc_msgSend; saFn((id)UIApplicationClass,sa);
+    app=(id)saFn;
     UIWindow *stheno=nil; NSUInteger idx=0;
-    if(!app){Log("no UIApplication\n");return;}
     SEL wp=sel_registerName("windows");
-    NSArray<UIWindow *> *wins=((NSArray<UIWindow *> *(*)(id,SEL))objc_msgSend)((id)app,wp);
+    NSArray<UIWindow *> *wins=nil;
+    void(*wsFn)(id,SEL)=(void(*)(id,SEL))objc_msgSend;
+    wins=(NSArray<UIWindow *> *)objc_msgSend(app,wp);
     for(UIWindow *w in wins){
         NSString *cn=NSStringFromClass([w class]); CGRect f=w.frame;
         Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n",w,cn.UTF8String,f.origin.x,f.origin.y,f.size.width,f.size.height);
