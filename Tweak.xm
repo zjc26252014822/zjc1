@@ -68,8 +68,8 @@ static void ScanWindows(void) {
     }
     Log("window count=%lu\n",(unsigned long)idx);
     // Also ensure the stored Stheno window is clamped (in case the loop missed)
-    if(sttheno){
-        CGRect f=sfFn(sttheno,fr);
+    if(stheno){
+        CGRect f=sfFn(stheno,fr);
         CGRect newF = f;
         if(newF.origin.x < 0) newF.origin.x = 0;
         if(newF.origin.y < 0) newF.origin.y = 0;
@@ -78,10 +78,10 @@ static void ScanWindows(void) {
         if(newF.origin.y + newF.size.height > screenRect.size.height)
             newF.origin.y = screenRect.size.height - newF.size.height;
         if(newF.origin.x != f.origin.x || newF.origin.y != f.origin.y){
-            sfSet(sttheno, sel_registerName("setFrame:"), newF);
-            Log("Adjusted STHENO-WINDOW %p to frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)sttheno, newF.origin.x, newF.origin.y, newF.size.width, newF.size.height);
+            sfSet(stheno, sel_registerName("setFrame:"), newF);
+            Log("Adjusted STHENO-WINDOW %p to frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)stheno, newF.origin.x, newF.origin.y, newF.size.width, newF.size.height);
         } else {
-            Log("STHENO-WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)sttheno, NSStringFromClass(object_getClass(sttheno)).UTF8String, f.origin.x, f.origin.y, f.size.width, f.size.height);
+            Log("STHENO-WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)stheno, NSStringFromClass(object_getClass(stheno)).UTF8String, f.origin.x, f.origin.y, f.size.width, f.size.height);
         }
     } else {Log("no Stheno-prefixed window found\n");}
 }
