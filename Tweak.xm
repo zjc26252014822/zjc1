@@ -59,6 +59,7 @@ static void TryPatchStheno(void) {
         memcpy(orig, (const void *)target, 16);
         Log("FOUND Stheno.dylib base=%p target=%p page=%p\n", (void *)base, (void *)target, (void *)page);
         Log("  orig words: %08x %08x %08x %08x\n", orig[0], orig[1], orig[2], orig[3]);
+        Log("  expect orig: %08x %08x %08x %08x\n", kExpectedOrig[0], kExpectedOrig[1], kExpectedOrig[2], kExpectedOrig[3]);
 
         int m1 = mprotect((void *)page, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC);
         Log("  mprotect(RWX)=%d\n", m1);
