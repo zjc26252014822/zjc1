@@ -1,90 +1,87 @@
 #import <Foundation/Foundation.h>
-#import <objc/runtime.h>
-#include <objc/message.h>
-#include <objc/objc.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdarg.h>
-#include <stdio.h>
+#import <mach-o/dyld.h>
+#import <sys/mman.h>
+#import <libkern/OSCacheControl.h>
+#import <dlfcn.h>
+#import <stdint.h>
 
-static void Log(const char *f, ...) {
-    int d=open("/var/mobile/Documents/SthenoBounds.trace",O_WRONLY|O_CREAT|O_APPEND,0644);
-    if(d<0)return;
-    char b[300]; va_list a; va_start(a,f); int n=vsnprintf(b,sizeof b,f,a); va_end(a);
-    if(n>0)write(d,b,(unsigned long)(n<299?n:279)); close(d);
-}
+// Stheno.dylib 拖拽越界修复 (arm64e 运行时补丁)
+//
+// 根因：Stheno.dylib 内部函数 0x9ca84 在写回拖拽百分比时，
+//       只夹下界 0.3 (fmaxnm)，漏了上界 0.7 (fminnm)，
+//       导致百分比可无限累加 >1.0，卡片被拖出屏幕。
+//
+// 补丁：把 0x9cacc..0x9cad8 这 4 条指令原位替换为：
+//       ldr d1, 0xb4800   (0.3)
+//       ldr d2, 0xb4810   (0.7)
+//       fmaxnm d0, d0, d1
+//       fminnm d0, d0, d2
+// 即把结果夹到 [0.3, 0.7]，指令条数不变，不破坏代码签名/PAC。
+//
+// 注意：0x9ca84 / 0xb4800 / 0xb4810 均为 __TEXT 段内的 VM 地址，
+//       __TEXT vmaddr = 0，故运行时地址 = mach_header + vmaddr。
 
-/* Strategy from the reference repo: constrain Stheno windows to screen bounds.
-   This build enumerates windows via plain runtime C calls. */
-static void ScanWindows(void) {
-    typedef id (*SM)(id,SEL);
-    typedef id (*SM1)(id,SEL,NSUInteger);
-    typedef CGRect (*SF)(id,SEL);
-    typedef void (*SFSet)(id,SEL,CGRect);
-    SM smFn; SM1 sm1; SF sfFn; SFSet sfSet;
-    *(void **)&smFn=(void *)objc_msgSend;
-    *(void **)&sm1=(void *)objc_msgSend;
-    *(void **)&sfFn=(void *)objc_msgSend;
-    *(void **)&sfSet=(void *)objc_msgSend;
+// 函数 0x9ca84 内被替换的第一条指令 (mov x8,#0x3f... 载入 0.3 的前半)
+static const uint64_t kPatchVmAddr = 0x9cacc;
+static const uint32_t kPatchInsns[4] = {
+    0x5c0be9a1,  // ldr d1, 0xb4800  (0.3)
+    0x5c0bea02,  // ldr d2, 0xb4810  (0.7)
+    0x1e616800,  // fmaxnm d0, d0, d1
+    0x1e627800,  // fminnm d0, d0, d2
+};
 
-    // Get UIApplication windows
-    id UIApplicationClass=(id)objc_getClass("UIApplication");
-    if(!UIApplicationClass){Log("no UIApplication class\n");return;}
-    SEL sa=sel_registerName("sharedApplication"); id app=smFn(UIApplicationClass,sa);
-    if(!app){Log("no UIApplication instance\n");return;}
-    SEL wp=sel_registerName("windows"); id wins=smFn(app,wp);
+static bool sPatched = false;
 
-    // Get screen bounds for clamping
-    id UIScreenClass=(id)objc_getClass("UIScreen");
-    SEL ms=sel_registerName("mainScreen"); id screen=smFn(UIScreenClass, ms);
-    SEL bd=sel_registerName("bounds"); CGRect screenRect = sfFn(screen, bd);
+static void TryPatchStheno(void) {
+    if (sPatched) return;
 
-    SEL fr=sel_registerName("frame");
-    NSUInteger idx=[(id)wins count]; NSUInteger i;
-    id stheno=nil;
-    for(i=0;i<idx;i++){
-        SEL oai=sel_registerName("objectAtIndex:"); id w=sm1(wins,oai,i);
-        NSString *cn=NSStringFromClass(object_getClass(w));
-        CGRect f=sfFn(w,fr);
-        // Clamp to screen bounds if this is Stheno window
-        if([cn containsString:@"Stheno"]){
-            stheno=w;
-            CGRect newF = f;
-            if(newF.origin.x < 0) newF.origin.x = 0;
-            if(newF.origin.y < 0) newF.origin.y = 0;
-            if(newF.origin.x + newF.size.width > screenRect.size.width)
-                newF.origin.x = screenRect.size.width - newF.size.width;
-            if(newF.origin.y + newF.size.height > screenRect.size.height)
-                newF.origin.y = screenRect.size.height - newF.size.height;
-            if(newF.origin.x != f.origin.x || newF.origin.y != f.origin.y){
-                sfSet(w, sel_registerName("setFrame:"), newF);
-                Log("Adjusted Stheno WINDOW %p to frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)w, newF.origin.x, newF.origin.y, newF.size.width, newF.size.height);
-            } else {
-                Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)w, cn.UTF8String, f.origin.x, f.origin.y, f.size.width, f.size.height);
-            }
-        } else {
-            Log("WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)w, cn.UTF8String, f.origin.x, f.origin.y, f.size.width, f.size.height);
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (name == NULL) continue;
+
+        // 只在 Stheno.dylib 上打补丁
+        size_t len = strlen(name);
+        if (len < 12) continue;
+        if (strcmp(name + len - 12, "Stheno.dylib") != 0) continue;
+
+        const struct mach_header *mh = _dyld_get_image_header(i);
+        if (mh == NULL) continue;
+
+        uintptr_t base = (uintptr_t)mh;
+        uintptr_t target = base + kPatchVmAddr;
+        uintptr_t page = target & ~(uintptr_t)0x3fffULL;
+
+        // 让该页可写
+        if (mprotect((void *)page, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+            continue;
         }
+
+        volatile uint32_t *p = (volatile uint32_t *)target;
+        for (int j = 0; j < 4; j++) {
+            p[j] = kPatchInsns[j];
+        }
+
+        // 刷新指令缓存
+        sys_icache_invalidate((void *)target, 16);
+
+        // 恢复只读+执行
+        mprotect((void *)page, 0x4000, PROT_READ | PROT_EXEC);
+
+        sPatched = true;
+        break;
     }
-    Log("window count=%lu\n",(unsigned long)idx);
-    // Also ensure the stored Stheno window is clamped (in case the loop missed)
-    if(stheno){
-        CGRect f=sfFn(stheno,fr);
-        CGRect newF = f;
-        if(newF.origin.x < 0) newF.origin.x = 0;
-        if(newF.origin.y < 0) newF.origin.y = 0;
-        if(newF.origin.x + newF.size.width > screenRect.size.width)
-            newF.origin.x = screenRect.size.width - newF.size.width;
-        if(newF.origin.y + newF.size.height > screenRect.size.height)
-            newF.origin.y = screenRect.size.height - newF.size.height;
-        if(newF.origin.x != f.origin.x || newF.origin.y != f.origin.y){
-            sfSet(stheno, sel_registerName("setFrame:"), newF);
-            Log("Adjusted STHENO-WINDOW %p to frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)stheno, newF.origin.x, newF.origin.y, newF.size.width, newF.size.height);
-        } else {
-            Log("STHENO-WINDOW %p class=%s frame=(%.0f,%.0f %.0fx%.0f)\n", (__bridge void *)stheno, NSStringFromClass(object_getClass(stheno)).UTF8String, f.origin.x, f.origin.y, f.size.width, f.size.height);
-        }
-    } else {Log("no Stheno-prefixed window found\n");}
 }
 
-static void Init(void){unlink("/var/mobile/Documents/SthenoBounds.trace"); Log("scan started\n"); dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3LL*NSEC_PER_SEC),dispatch_get_main_queue(),^{ScanWindows();}); }
-__attribute__((constructor))static void Start(void){ dispatch_async(dispatch_get_main_queue(),^{ Init(); }); }
+static void ImageAddedCallback(const struct mach_header *mh, intptr_t vmaddr_slide) {
+    (void)mh;
+    (void)vmaddr_slide;
+    TryPatchStheno();
+}
+
+__attribute__((constructor)) static void SthenoBoundsInit(void) {
+    // 先试一次（可能已加载）
+    TryPatchStheno();
+    // 注册回调，Stheno.dylib 晚于本 tweak 加载时也能命中
+    _dyld_register_func_for_add_image(ImageAddedCallback);
+}
