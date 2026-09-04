@@ -4,31 +4,36 @@
 #import <libkern/OSCacheControl.h>
 #import <dlfcn.h>
 #import <stdint.h>
+#import <fcntl.h>
+#import <unistd.h>
+#import <stdarg.h>
+#import <stdio.h>
 
-// Stheno.dylib 拖拽越界修复 (arm64e 运行时补丁)
-//
-// 根因：Stheno.dylib 内部函数 0x9ca84 在写回拖拽百分比时，
-//       只夹下界 0.3 (fmaxnm)，漏了上界 0.7 (fminnm)，
-//       导致百分比可无限累加 >1.0，卡片被拖出屏幕。
-//
-// 补丁：把 0x9cacc..0x9cad8 这 4 条指令原位替换为：
-//       ldr d1, 0xb4800   (0.3)
-//       ldr d2, 0xb4810   (0.7)
-//       fmaxnm d0, d0, d1
-//       fminnm d0, d0, d2
-// 即把结果夹到 [0.3, 0.7]，指令条数不变，不破坏代码签名/PAC。
-//
-// 注意：0x9ca84 / 0xb4800 / 0xb4810 均为 __TEXT 段内的 VM 地址，
-//       __TEXT vmaddr = 0，故运行时地址 = mach_header + vmaddr。
+static void Log(const char *f, ...) {
+    int d = open("/var/mobile/Documents/SthenoBounds.trace", O_WRONLY|O_CREAT|O_APPEND, 0644);
+    if (d < 0) return;
+    char b[512]; va_list a; va_start(a, f);
+    int n = vsnprintf(b, sizeof(b), f, a); va_end(a);
+    if (n > 0) write(d, b, (size_t)(n < 511 ? n : 511));
+    close(d);
+}
 
-// 函数 0x9ca84 内被替换的第一条指令 (mov x8,#0x3f... 载入 0.3 的前半)
-static const uint64_t kPatchVmAddr = 0x9cacc;
+// 期望在 0x9cacc 处看到的原始指令（用于校验目标正确性）
+static const uint32_t kExpectedOrig[4] = {
+    0xd2c33348,  // mov x8, #0x3333333333333333  (0.3 的低 16 位)
+    0xf2dfd3c8,  // movk x8, #0x3fd3, lsl #48
+    0x9e670101,  // fmov d1, x8
+    0x1e616800,  // fmaxnm d0, d0, d1
+};
+
 static const uint32_t kPatchInsns[4] = {
     0x5c0be9a1,  // ldr d1, 0xb4800  (0.3)
     0x5c0bea02,  // ldr d2, 0xb4810  (0.7)
     0x1e616800,  // fmaxnm d0, d0, d1
     0x1e627800,  // fminnm d0, d0, d2
 };
+
+static const uint64_t kPatchVmAddr = 0x9cacc;
 
 static bool sPatched = false;
 
@@ -39,8 +44,6 @@ static void TryPatchStheno(void) {
     for (uint32_t i = 0; i < count; i++) {
         const char *name = _dyld_get_image_name(i);
         if (name == NULL) continue;
-
-        // 只在 Stheno.dylib 上打补丁
         size_t len = strlen(name);
         if (len < 12) continue;
         if (strcmp(name + len - 12, "Stheno.dylib") != 0) continue;
@@ -52,36 +55,42 @@ static void TryPatchStheno(void) {
         uintptr_t target = base + kPatchVmAddr;
         uintptr_t page = target & ~(uintptr_t)0x3fffULL;
 
-        // 让该页可写
-        if (mprotect((void *)page, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-            continue;
-        }
+        uint32_t orig[4];
+        memcpy(orig, (const void *)target, 16);
+        Log("FOUND Stheno.dylib base=%p target=%p page=%p\n", (void *)base, (void *)target, (void *)page);
+        Log("  orig words: %08x %08x %08x %08x\n", orig[0], orig[1], orig[2], orig[3]);
+
+        int m1 = mprotect((void *)page, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC);
+        Log("  mprotect(RWX)=%d\n", m1);
 
         volatile uint32_t *p = (volatile uint32_t *)target;
-        for (int j = 0; j < 4; j++) {
-            p[j] = kPatchInsns[j];
-        }
+        for (int j = 0; j < 4; j++) p[j] = kPatchInsns[j];
 
-        // 刷新指令缓存
         sys_icache_invalidate((void *)target, 16);
 
-        // 恢复只读+执行
-        mprotect((void *)page, 0x4000, PROT_READ | PROT_EXEC);
+        uint32_t after[4];
+        memcpy(after, (const void *)target, 16);
+        Log("  after  words: %08x %08x %08x %08x\n", after[0], after[1], after[2], after[3]);
+
+        int m2 = mprotect((void *)page, 0x4000, PROT_READ | PROT_EXEC);
+        Log("  mprotect(RX)=%d\n", m2);
 
         sPatched = true;
         break;
     }
+    if (!sPatched) {
+        Log("Stheno.dylib NOT FOUND in images (count=%u)\n", count);
+    }
 }
 
-static void ImageAddedCallback(const struct mach_header *mh, intptr_t vmaddr_slide) {
-    (void)mh;
-    (void)vmaddr_slide;
+static void ImageAddedCallback(const struct mach_header *mh, intptr_t slide) {
+    (void)mh; (void)slide;
     TryPatchStheno();
 }
 
 __attribute__((constructor)) static void SthenoBoundsInit(void) {
-    // 先试一次（可能已加载）
+    unlink("/var/mobile/Documents/SthenoBounds.trace");
+    Log("000SthenoBounds loaded\n");
     TryPatchStheno();
-    // 注册回调，Stheno.dylib 晚于本 tweak 加载时也能命中
     _dyld_register_func_for_add_image(ImageAddedCallback);
 }
