@@ -8,6 +8,7 @@
 #import <unistd.h>
 #import <stdarg.h>
 #import <stdio.h>
+#import <string.h>
 
 static void Log(const char *f, ...) {
     int d = open("/var/mobile/Documents/SthenoBounds.trace", O_WRONLY|O_CREAT|O_APPEND, 0644);
@@ -18,22 +19,16 @@ static void Log(const char *f, ...) {
     close(d);
 }
 
-// 期望在 0x9cacc 处看到的原始指令（用于校验目标正确性）
-static const uint32_t kExpectedOrig[4] = {
-    0xd2c33348,  // mov x8, #0x3333333333333333  (0.3 的低 16 位)
-    0xf2dfd3c8,  // movk x8, #0x3fd3, lsl #48
-    0x9e670101,  // fmov d1, x8
-    0x1e616800,  // fmaxnm d0, d0, d1
+// 两处拖拽百分比写回点的原位替换：把只夹下界 0.3 改成夹 [0.3, 0.7]
+// Site A @ 0x9c084 (横向 rightPecent/leftPecent)
+// Site B @ 0x9cacc (纵向 rightHeightPecent/leftHeightPecent)
+static const struct {
+    uint64_t vmaddr;
+    uint32_t insn[4];
+} kPatches[] = {
+    { 0x9c084, { 0x5c0c3be1, 0x5c0c3c42, 0x1e616800, 0x1e627800 } },
+    { 0x9cacc, { 0x5c0be9a1, 0x5c0bea02, 0x1e616800, 0x1e627800 } },
 };
-
-static const uint32_t kPatchInsns[4] = {
-    0x5c0be9a1,  // ldr d1, 0xb4800  (0.3)
-    0x5c0bea02,  // ldr d2, 0xb4810  (0.7)
-    0x1e616800,  // fmaxnm d0, d0, d1
-    0x1e627800,  // fminnm d0, d0, d2
-};
-
-static const uint64_t kPatchVmAddr = 0x9cacc;
 
 static bool sPatched = false;
 
@@ -52,36 +47,36 @@ static void TryPatchStheno(void) {
         if (mh == NULL) continue;
 
         uintptr_t base = (uintptr_t)mh;
-        uintptr_t target = base + kPatchVmAddr;
-        uintptr_t page = target & ~(uintptr_t)0x3fffULL;
+        Log("FOUND Stheno.dylib base=%p\n", (void *)base);
 
-        uint32_t orig[4];
-        memcpy(orig, (const void *)target, 16);
-        Log("FOUND Stheno.dylib base=%p target=%p page=%p\n", (void *)base, (void *)target, (void *)page);
-        Log("  orig words: %08x %08x %08x %08x\n", orig[0], orig[1], orig[2], orig[3]);
-        Log("  expect orig: %08x %08x %08x %08x\n", kExpectedOrig[0], kExpectedOrig[1], kExpectedOrig[2], kExpectedOrig[3]);
+        for (size_t k = 0; k < sizeof(kPatches)/sizeof(kPatches[0]); k++) {
+            uintptr_t target = base + kPatches[k].vmaddr;
+            uintptr_t page = target & ~(uintptr_t)0x3fffULL;
 
-        int m1 = mprotect((void *)page, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC);
-        Log("  mprotect(RWX)=%d\n", m1);
+            uint32_t orig[4];
+            memcpy(orig, (const void *)target, 16);
+            Log("  site @ +%llx orig: %08x %08x %08x %08x\n",
+                (unsigned long long)kPatches[k].vmaddr,
+                orig[0], orig[1], orig[2], orig[3]);
 
-        volatile uint32_t *p = (volatile uint32_t *)target;
-        for (int j = 0; j < 4; j++) p[j] = kPatchInsns[j];
+            int m1 = mprotect((void *)page, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC);
+            volatile uint32_t *p = (volatile uint32_t *)target;
+            for (int j = 0; j < 4; j++) p[j] = kPatches[k].insn[j];
+            sys_icache_invalidate((void *)target, 16);
 
-        sys_icache_invalidate((void *)target, 16);
+            uint32_t after[4];
+            memcpy(after, (const void *)target, 16);
+            Log("  site @ +%llx after: %08x %08x %08x %08x (mprotect=%d)\n",
+                (unsigned long long)kPatches[k].vmaddr,
+                after[0], after[1], after[2], after[3], m1);
 
-        uint32_t after[4];
-        memcpy(after, (const void *)target, 16);
-        Log("  after  words: %08x %08x %08x %08x\n", after[0], after[1], after[2], after[3]);
-
-        int m2 = mprotect((void *)page, 0x4000, PROT_READ | PROT_EXEC);
-        Log("  mprotect(RX)=%d\n", m2);
+            mprotect((void *)page, 0x4000, PROT_READ | PROT_EXEC);
+        }
 
         sPatched = true;
         break;
     }
-    if (!sPatched) {
-        Log("Stheno.dylib NOT FOUND in images (count=%u)\n", count);
-    }
+    if (!sPatched) Log("Stheno.dylib NOT FOUND (images=%u)\n", count);
 }
 
 static void ImageAddedCallback(const struct mach_header *mh, intptr_t slide) {
