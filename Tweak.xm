@@ -20,31 +20,22 @@ static void Log(const char *f, ...) {
 
 static uintptr_t gBase = 0;
 
-// 0x4a780 = DragGesture.onChanged 处理函数 (Swift, x0=obj, x1=value)
-// 从 x19(=x1) 的字段读 gestureState 字节，字段偏移存在 __DATA 全局 [0xf7000+0x8e0]
-static void (*origDrag)(void *, void *);
+// 4 个调用 DragGesture.Value.translation 的函数入口
+typedef void (*DragFn)(void *, void *);
+static DragFn orig2f894, orig4a780, orig610e0, orig7fd88;
 
-static uint32_t ReadStateOffset(void) {
-    if (!gBase) return 0;
-    // 0xf7000 落在 __DATA 段；全局存的是字段偏移量（运行时由 Swift 填好）
-    uintptr_t slot = gBase + 0xf7000 + 0x8e0;
-    return *(uint32_t *)(slot);
+static void logEnter(const char *tag, void *a0, void *a1) {
+    Log("ENTER %s a0=%p a1=%p\n", tag, a0, a1);
 }
 
-static void hookDrag(void *obj, void *val) {
-    uint32_t off = ReadStateOffset();
-    uint8_t state = 0;
-    if (off) state = *(uint8_t *)((uintptr_t)val + off);
-    // 顺便读一下首帧 translation 存的位置 [val+0x60]/[val+0x68]
-    double tx = 0, ty = 0;
-    if (val) { tx = *(double *)((uintptr_t)val + 0x60); ty = *(double *)((uintptr_t)val + 0x68); }
-    Log("DRAG state=%u firstTrans=(%.1f,%.1f) off=%u\n", state, tx, ty, off);
-    origDrag(obj, val);
-}
+static void h2f894(void *a0, void *a1) { logEnter("2f894", a0, a1); orig2f894(a0, a1); }
+static void h4a780(void *a0, void *a1) { logEnter("4a780", a0, a1); orig4a780(a0, a1); }
+static void h610e0(void *a0, void *a1) { logEnter("610e0", a0, a1); orig610e0(a0, a1); }
+static void h7fd88(void *a0, void *a1) { logEnter("7fd88", a0, a1); orig7fd88(a0, a1); }
 
 static bool sHooked = false;
 
-static void TryHookStheno(void) {
+static void TryHook(void) {
     if (sHooked) return;
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
@@ -56,22 +47,26 @@ static void TryHookStheno(void) {
         const struct mach_header *mh = _dyld_get_image_header(i);
         if (!mh) continue;
         gBase = (uintptr_t)mh;
-        Log("HOOK base=%p stateSlot=%p stateOff=%u\n", (void *)gBase, (void *)(gBase + 0xf7000 + 0x8e0), ReadStateOffset());
-        MSHookFunction((void *)(gBase + 0x4a780), (void *)hookDrag, (void **)&origDrag);
+        Log("BASE=%p\n", (void *)gBase);
+        MSHookFunction((void *)(gBase + 0x2f894), (void *)h2f894, (void **)&orig2f894);
+        MSHookFunction((void *)(gBase + 0x4a780), (void *)h4a780, (void **)&orig4a780);
+        MSHookFunction((void *)(gBase + 0x610e0), (void *)h610e0, (void **)&orig610e0);
+        MSHookFunction((void *)(gBase + 0x7fd88), (void *)h7fd88, (void **)&orig7fd88);
+        Log("all 4 hooks installed\n");
         sHooked = true;
         break;
     }
-    if (!sHooked) Log("not yet: images=%u\n", count);
+    if (!sHooked) Log("not yet images=%u\n", count);
 }
 
 static void ImgCB(const struct mach_header *mh, intptr_t slide) {
     (void)mh; (void)slide;
-    TryHookStheno();
+    TryHook();
 }
 
 __attribute__((constructor)) static void Init(void) {
     unlink("/var/mobile/Documents/SthenoBounds.trace");
-    Log("diagnostic loaded\n");
-    TryHookStheno();
+    Log("diag4 loaded\n");
+    TryHook();
     _dyld_register_func_for_add_image(ImgCB);
 }
