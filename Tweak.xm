@@ -15,17 +15,6 @@ static void Log(const char *f, ...) {
     close(d);
 }
 
-// 去重：每个类名最多打 5 条，避免刷屏
-static int gPanLog[64];
-static int gPanN = 0;
-
-static bool SeenPan(NSString *cls) {
-    unsigned long h = [cls hash];
-    for (int i = 0; i < gPanN; i++) if (gPanLog[i] == (int)h) return true;
-    if (gPanN < 63) gPanLog[gPanN++] = (int)h;
-    return false;
-}
-
 %hook UIPanGestureRecognizer
 - (CGPoint)translationInView:(UIView *)view {
     CGPoint p = %orig;
