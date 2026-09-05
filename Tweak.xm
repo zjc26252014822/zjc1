@@ -29,10 +29,11 @@ static bool SeenPan(NSString *cls) {
 %hook UIPanGestureRecognizer
 - (CGPoint)translationInView:(UIView *)view {
     CGPoint p = %orig;
-    NSString *vc = view ? NSStringFromClass([view class]) : @"nil";
-    if (!SeenPan(vc)) {
-        Log("PAN view=%@ pt=(%.1f,%.1f)\n", vc, p.x, p.y);
-    }
+    NSString *sc = NSStringFromClass([self class]);
+    UIView *gv = [self view];
+    NSString *vc = gv ? NSStringFromClass([gv class]) : @"nil";
+    Log("PAN cls=%@ view=%@ pt=(%.1f,%.1f) win=%@\n", sc, vc, p.x, p.y,
+        [gv window] ? NSStringFromClass([[gv window] class]) : @"nil");
     return p;
 }
 %end
